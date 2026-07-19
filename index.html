@@ -249,6 +249,15 @@ function stripAccent(s){
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function isoToVN(iso){ const d = iso.split("-"); return d[2]+"/"+d[1]+"/"+d[0]; }
+function vnKey(ngay){ const m = String(ngay||"").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? m[3]+m[2].padStart(2,"0")+m[1].padStart(2,"0") : "00000000"; }
+function sortKey(h){ return vnKey(h.ngay) + " " + (String(h.ts||"").split(" ")[1] || ""); }
+function navHTML(cur){
+  const base = location.origin + location.pathname;
+  const L = [];
+  if(cur !== "kho") L.push('<a href="'+base+'" style="color:var(--safety);font-weight:700">Kho vật tư</a>');
+  if(cur !== "dash") L.push('<a href="'+base+'?view=tong" style="color:var(--safety);font-weight:700">Bảng tổng</a>');
+  return ' · ' + L.join(' · ');
+}
 
 /* ==================== LOAD ==================== */
 async function loadData(){
@@ -269,7 +278,7 @@ function initUI(){
   const d = state.data;
   if(MODE === "dash"){
     document.body.classList.add("dash");
-    $("hdSub").textContent = "Bảng theo dõi tổng — tự cập nhật mỗi 60 giây";
+    $("hdSub").innerHTML = "Bảng theo dõi tổng — tự cập nhật mỗi 60 giây" + navHTML("dash");
     renderDash();
     if(!state.dashTimer){
       state.dashTimer = setInterval(async ()=>{
@@ -293,13 +302,13 @@ function initUI(){
       $("main").innerHTML = '<div class="load">Mã xe không có trong hệ thống. Kiểm tra lại QR hoặc báo Leon.</div>';
       return;
     }
-    $("hdSub").textContent = "Hồ sơ phương tiện";
+    $("hdSub").innerHTML = "Hồ sơ phương tiện" + navHTML("xe");
     $("xeHero").style.display = "flex";
     $("xeCode").textContent = xe.ma;
     $("xeLoai").textContent = xe.loai + (xe.ten ? " · " + xe.ten : "");
     buildTabs([["hoso","📋 Hồ sơ"],["baohong","🚨 Báo hỏng"],["suachua","🔧 Sửa chữa"],["baoduong","🛠 Bảo dưỡng"]]);
   }else{
-    $("hdSub").textContent = "Kho vật tư sửa chữa";
+    $("hdSub").innerHTML = "Kho vật tư sửa chữa" + navHTML("kho");
     buildTabs([["ton","📦 Tồn"],["xuat","📤 Xuất"],["nhap","📥 Nhập"],["dexuat","🧾 Đề xuất"],["lichsu","🕘 Lịch sử"]]);
   }
 }
@@ -367,19 +376,47 @@ function renderHoSo(){
   });
 
   const ev = [];
-  d.history.BAO_HONG.filter(r=>r.maXe===XE).forEach(r=>ev.push({t:"bh", ts:r.ts, top:esc(r.tinhTrang||"Báo hỏng"), val:esc(r.maBH), sub:"Ngày "+esc(r.ngay)+" · "+esc(r.nguoi)+" · "+esc(r.moTa)}));
-  d.history.SUA_CHUA.filter(r=>r.maXe===XE).forEach(r=>ev.push({t:"sc", ts:r.ts, top:esc(r.vt), val:r.sl+" "+esc(r.dvt), sub:"Ngày "+esc(r.ngay)+" · "+esc(r.nguoi)+(r.maBH?" · đóng "+esc(r.maBH):"")+(r.ghichu?" · "+esc(r.ghichu):""), neg:r.sl<0}));
-  d.history.BAO_DUONG.filter(r=>r.maXe===XE).forEach(r=>ev.push({t:"bd", ts:r.ts, top:esc(r.hangMuc), val:(r.soGio!=null? r.soGio+"h":""), sub:"Ngày "+esc(r.ngay)+" · "+esc(r.nguoi)+(r.ghichu?" · "+esc(r.ghichu):"")}));
-  ev.sort((a,b)=> b.ts > a.ts ? 1 : -1);
+  d.history.BAO_HONG.filter(r=>r.maXe===XE).forEach(r=>ev.push({t:"bh", ts:r.ts, ngay:r.ngay, top:esc(r.tinhTrang||"Báo hỏng"), val:esc(r.maBH), sub:"Ngày "+esc(r.ngay)+" · "+esc(r.nguoi)+" · "+esc(r.moTa)}));
+  d.history.SUA_CHUA.filter(r=>r.maXe===XE).forEach(r=>ev.push({t:"sc", ts:r.ts, ngay:r.ngay, top:esc(r.vt), val:r.sl+" "+esc(r.dvt), sub:"Ngày "+esc(r.ngay)+" · "+esc(r.nguoi)+(r.nguoiNhan&&r.nguoiNhan!==r.nguoi?" · nhận "+esc(r.nguoiNhan):"")+(r.maBH?" · đóng "+esc(r.maBH):"")+(r.ghichu?" · "+esc(r.ghichu):""), neg:r.sl<0}));
+  d.history.BAO_DUONG.filter(r=>r.maXe===XE).forEach(r=>ev.push({t:"bd", ts:r.ts, ngay:r.ngay, top:esc(r.hangMuc), val:(r.soGio!=null? r.soGio+"h":""), sub:"Ngày "+esc(r.ngay)+" · "+esc(r.nguoi)+(r.ghichu?" · "+esc(r.ghichu):"")}));
+  ev.sort((a,b)=> sortKey(b) > sortKey(a) ? 1 : -1);
+  state.hosoEv = ev;
 
-  html += '<div class="sec-t">LỊCH SỬ XE (' + ev.length + ' gần nhất)</div>';
-  if(!ev.length) html += '<div class="empty-note">Chưa có ghi nhận nào.</div>';
-  ev.slice(0,40).forEach(e=>{
-    const tag = e.t==="bh" ? '<span class="hist-tag bh">BÁO HỎNG</span>' : (e.t==="sc" ? '<span class="hist-tag sc">SỬA CHỮA</span>' : '<span class="hist-tag bd">BẢO DƯỠNG</span>');
-    html += '<div class="hist-row'+(e.neg?' neg':'')+'"><div class="top"><span>'+tag+e.top+'</span><b>'+e.val+'</b></div><div class="sub">'+e.sub+'</div></div>';
-  });
+  html += '<div class="sec-t">LỊCH SỬ XE</div>'
+       + '<div class="chips" id="hsChips">'
+       + '<button data-t="all" class="on">Tất cả</button>'
+       + '<button data-t="bh">Báo hỏng</button>'
+       + '<button data-t="sc">Sửa chữa</button>'
+       + '<button data-t="bd">Bảo dưỡng</button></div>'
+       + '<div class="search-box" style="display:flex;gap:8px;padding-top:0"><input type="date" id="hsDate" style="flex:1;border:2px solid var(--line);border-radius:12px;padding:10px 12px;font-family:inherit;font-size:15px;background:var(--white)">'
+       + '<button id="hsDateAll" class="seen-btn">Mọi ngày</button></div>'
+       + '<div class="hint">Không lọc ngày: 40 dòng gần nhất. Web giữ 200 phiếu/loại — tra sâu hơn: mở Google Sheet (sổ gốc).</div>'
+       + '<div id="hsList"></div>';
 
   $("main").innerHTML = html;
+  let hsType = "all";
+  function renderHsList(){
+    let list = state.hosoEv.filter(e => hsType==="all" || e.t===hsType);
+    const df = $("hsDate").value;
+    if(df) list = list.filter(e => e.ngay === isoToVN(df));
+    else list = list.slice(0,40);
+    const box = $("hsList"); box.innerHTML = "";
+    if(!list.length){ box.innerHTML = '<div class="empty-note">'+((df||hsType!=="all")?"Không có ghi nhận nào khớp bộ lọc.":"Chưa có ghi nhận nào.")+'</div>'; return; }
+    list.forEach(e=>{
+      const tag = e.t==="bh" ? '<span class="hist-tag bh">BÁO HỎNG</span>' : (e.t==="sc" ? '<span class="hist-tag sc">SỬA CHỮA</span>' : '<span class="hist-tag bd">BẢO DƯỠNG</span>');
+      box.insertAdjacentHTML("beforeend", '<div class="hist-row'+(e.neg?' neg':'')+'"><div class="top"><span>'+tag+e.top+'</span><b>'+e.val+'</b></div><div class="sub">'+e.sub+'</div></div>');
+    });
+  }
+  document.querySelectorAll("#hsChips button").forEach(b=>{
+    b.onclick = ()=>{
+      hsType = b.dataset.t;
+      document.querySelectorAll("#hsChips button").forEach(x=>x.classList.toggle("on", x===b));
+      renderHsList();
+    };
+  });
+  $("hsDate").addEventListener("change", renderHsList);
+  $("hsDateAll").onclick = ()=>{ $("hsDate").value=""; renderHsList(); };
+  renderHsList();
 }
 
 /* ==================== BÁO HỎNG (KHÔNG PIN) ==================== */
@@ -694,7 +731,7 @@ function renderLsList(){
     sub:[h.nguoiNhan?"nhận: "+h.nguoiNhan:"", h.hangMuc, h.maXe?"xe "+h.maXe:"", h.ghichu].filter(Boolean).join(" · ")}));
   const hn = d.history.NHAP.map(h=>({t:"n", ts:h.ts, ngay:h.ngay, vt:h.vt, sl:h.sl, nguoi:h.nguoi, sub:h.ghichu||""}));
   const hd = d.history.DE_XUAT.map(h=>({t:"d", ts:h.ts, ngay:h.ngay, vt:h.vt, sl:h.sl, nguoi:h.nguoi, sub:h.ghichu||""}));
-  let hist = [...hx,...hn,...hd].sort((a,b)=> b.ts > a.ts ? 1 : -1);
+  let hist = [...hx,...hn,...hd].sort((a,b)=> sortKey(b) > sortKey(a) ? 1 : -1);
   if(lsType !== "all") hist = hist.filter(h=>h.t===lsType);
   const df = $("lsDate").value;
   if(df) hist = hist.filter(h=> h.ngay === isoToVN(df));
@@ -744,12 +781,14 @@ function renderDash(){
   const low = d.stock.filter(r => r.min > 0 && r.ton <= r.min);
 
   const acts = [];
-  d.history.BAO_HONG.filter(r=>r.ngay===todayVN).forEach(r=>acts.push({ts:r.ts, tag:'<span class="hist-tag bh">BÁO HỎNG</span>', top:esc(r.maXe)+" · "+esc(r.tinhTrang), sub:esc(r.nguoi)+" · "+esc(r.moTa)}));
-  d.history.SUA_CHUA.filter(r=>r.ngay===todayVN).forEach(r=>acts.push({ts:r.ts, tag:'<span class="hist-tag sc">XUẤT/SC</span>', top:esc(r.vt)+" — "+r.sl+" "+esc(r.dvt), sub:[r.maXe?"xe "+esc(r.maXe):"", r.nguoiNhan?"nhận "+esc(r.nguoiNhan):"", esc(r.nguoi)].filter(Boolean).join(" · ")}));
-  d.history.NHAP.filter(r=>r.ngay===todayVN).forEach(r=>acts.push({ts:r.ts, tag:'<span class="hist-tag n">NHẬP</span>', top:esc(r.vt)+" — "+r.sl+" "+esc(r.dvt), sub:esc(r.nguoi)}));
-  d.history.BAO_DUONG.filter(r=>r.ngay===todayVN).forEach(r=>acts.push({ts:r.ts, tag:'<span class="hist-tag bd">BẢO DƯỠNG</span>', top:esc(r.maXe)+" · "+esc(r.hangMuc), sub:(r.soGio!=null?r.soGio+"h · ":"")+esc(r.nguoi)}));
-  d.history.DE_XUAT.filter(r=>r.ngay===todayVN).forEach(r=>acts.push({ts:r.ts, tag:'<span class="hist-tag d">ĐỀ XUẤT</span>', top:esc(r.vt)+" — "+r.sl+" "+esc(r.dvt), sub:esc(r.nguoi)}));
-  acts.sort((a,b) => b.ts > a.ts ? 1 : -1);
+  d.history.BAO_HONG.forEach(r=>acts.push({t:"bh", ts:r.ts, ngay:r.ngay, tag:'<span class="hist-tag bh">BÁO HỎNG</span>', top:esc(r.maXe)+" · "+esc(r.tinhTrang), sub:esc(r.nguoi)+" · "+esc(r.moTa)}));
+  d.history.SUA_CHUA.forEach(r=>acts.push({t:"sc", ts:r.ts, ngay:r.ngay, tag:'<span class="hist-tag sc">XUẤT/SC</span>', top:esc(r.vt)+" — "+r.sl+" "+esc(r.dvt), sub:[r.maXe?"xe "+esc(r.maXe):"", r.nguoiNhan?"nhận "+esc(r.nguoiNhan):"", esc(r.nguoi), r.ghichu?esc(r.ghichu):""].filter(Boolean).join(" · "), neg:r.sl<0}));
+  d.history.NHAP.forEach(r=>acts.push({t:"n", ts:r.ts, ngay:r.ngay, tag:'<span class="hist-tag n">NHẬP</span>', top:esc(r.vt)+" — "+r.sl+" "+esc(r.dvt), sub:esc(r.nguoi)+(r.ghichu?" · "+esc(r.ghichu):"")}));
+  d.history.BAO_DUONG.forEach(r=>acts.push({t:"bd", ts:r.ts, ngay:r.ngay, tag:'<span class="hist-tag bd">BẢO DƯỠNG</span>', top:esc(r.maXe)+" · "+esc(r.hangMuc), sub:(r.soGio!=null?r.soGio+"h · ":"")+esc(r.nguoi)}));
+  d.history.DE_XUAT.forEach(r=>acts.push({t:"d", ts:r.ts, ngay:r.ngay, tag:'<span class="hist-tag d">ĐỀ XUẤT</span>', top:esc(r.vt)+" — "+r.sl+" "+esc(r.dvt), sub:esc(r.nguoi)+(r.ghichu?" · "+esc(r.ghichu):"")}));
+  acts.sort((a,b) => sortKey(b) > sortKey(a) ? 1 : -1);
+  state.dashActs = acts;
+  const todayCount = acts.filter(a => a.ngay === todayVN).length;
 
   const base = location.origin + location.pathname;
   let html =
@@ -816,13 +855,45 @@ function renderDash(){
     });
   }
 
-  html += '<div class="sec-t">HOẠT ĐỘNG HÔM NAY ('+acts.length+' phiếu)</div>';
-  if(!acts.length) html += '<div class="empty-note">Chưa có phiếu nào hôm nay.</div>';
-  acts.forEach(a => {
-    html += '<div class="hist-row"><div class="top"><span>'+a.tag+a.top+'</span><b>'+esc(a.ts)+'</b></div><div class="sub">'+a.sub+'</div></div>';
-  });
+  html += '<div class="sec-t">NHẬT KÝ HOẠT ĐỘNG — hôm nay '+todayCount+' phiếu</div>'
+       + '<div class="chips" id="daChips">'
+       + '<button data-t="all">Tất cả</button>'
+       + '<button data-t="bh">Báo hỏng</button>'
+       + '<button data-t="sc">Xuất/SC</button>'
+       + '<button data-t="n">Nhập</button>'
+       + '<button data-t="bd">Bảo dưỡng</button>'
+       + '<button data-t="d">Đề xuất</button></div>'
+       + '<div class="search-box" style="display:flex;gap:8px;padding-top:0"><input type="date" id="daDate" style="flex:1;border:2px solid var(--line);border-radius:12px;padding:10px 12px;font-family:inherit;font-size:15px;background:var(--white)">'
+       + '<button id="daDateAll" class="seen-btn">Mọi ngày</button></div>'
+       + '<div class="hint">Không lọc ngày: 30 dòng gần nhất. Web giữ 200 phiếu/loại — tra sâu hơn: mở Google Sheet (sổ gốc).</div>'
+       + '<div id="daList"></div>';
 
   $("main").innerHTML = html;
+  // Khôi phục trạng thái lọc (giữ qua vòng tự refresh 60s)
+  if(!state.daType) state.daType = "all";
+  document.querySelectorAll("#daChips button").forEach(b=>{
+    b.classList.toggle("on", b.dataset.t === state.daType);
+    b.onclick = ()=>{
+      state.daType = b.dataset.t;
+      document.querySelectorAll("#daChips button").forEach(x=>x.classList.toggle("on", x===b));
+      renderDaList();
+    };
+  });
+  if(state.daDate) $("daDate").value = state.daDate;
+  $("daDate").addEventListener("change", ()=>{ state.daDate = $("daDate").value; renderDaList(); });
+  $("daDateAll").onclick = ()=>{ state.daDate = ""; $("daDate").value = ""; renderDaList(); };
+  function renderDaList(){
+    let list = state.dashActs.filter(a => state.daType==="all" || a.t===state.daType);
+    const df = $("daDate").value;
+    if(df) list = list.filter(a => a.ngay === isoToVN(df));
+    else list = list.slice(0,30);
+    const box = $("daList"); box.innerHTML = "";
+    if(!list.length){ box.innerHTML = '<div class="empty-note">'+((df||state.daType!=="all")?"Không có phiếu nào khớp bộ lọc.":"Chưa có phiếu nào.")+'</div>'; return; }
+    list.forEach(a=>{
+      box.insertAdjacentHTML("beforeend", '<div class="hist-row'+(a.neg?' neg':'')+'"><div class="top"><span>'+a.tag+a.top+'</span><b>'+esc(a.ngay)+'</b></div><div class="sub">Gửi '+esc(a.ts)+' · '+a.sub+'</div></div>');
+    });
+  }
+  renderDaList();
   $("btnSeen").onclick = ()=>{
     try{ localStorage.setItem("ktvt_seen", String(total)); }catch(_){}
     renderDash();
