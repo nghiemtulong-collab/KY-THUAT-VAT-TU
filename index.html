@@ -322,8 +322,8 @@ function initUI(){
   if(MODE === "xe"){
     const xe = d.xe.find(x => x.ma === XE);
     if(!xe){
-      $("hdSub").textContent = "Không tìm thấy xe " + XE + " trong danh mục.";
-      $("main").innerHTML = '<div class="load">Mã xe không có trong hệ thống. Kiểm tra lại QR hoặc báo Leon.</div>';
+      $("hdSub").textContent = "Không tìm thấy phương tiện " + XE + " trong danh mục.";
+      $("main").innerHTML = '<div class="load">Mã phương tiện không có trong hệ thống. Kiểm tra lại QR hoặc báo Leon.</div>';
       return;
     }
     $("hdSub").innerHTML = "Hồ sơ phương tiện" + navHTML("xe");
@@ -369,7 +369,7 @@ function renderHoSo(){
   const d = state.data;
   const hm = d.hangmuc.filter(h => h.maXe === XE);
   const open = d.openBH.filter(o => o.maXe === XE);
-  let html = '<div class="warn-note">⚠️ Số liệu ghi nhận từ phiếu — <b>chưa phải kết quả kiểm định</b>. Hạn theo giờ: so với đồng hồ trên xe.</div>';
+  let html = '<div class="warn-note">⚠️ Số liệu ghi nhận từ phiếu — <b>chưa phải kết quả kiểm định</b>. Hạn theo giờ: so với đồng hồ trên máy.</div>';
 
   if(open.length){
     html += '<div class="sec-t">SỰ CỐ ĐANG MỞ <span class="tag open">' + open.length + '</span></div>';
@@ -380,7 +380,7 @@ function renderHoSo(){
   }
 
   html += '<div class="sec-t">HẠN BẢO DƯỠNG (cập nhật ' + esc(d.updated) + ')</div>';
-  if(!hm.length) html += '<div class="empty-note">Chưa khai báo hạng mục bảo dưỡng cho xe này.</div>';
+  if(!hm.length) html += '<div class="empty-note">Chưa khai báo hạng mục bảo dưỡng cho phương tiện này.</div>';
   hm.forEach(h=>{
     let due, over = false;
     if(h.noBase){
@@ -406,7 +406,7 @@ function renderHoSo(){
   ev.sort((a,b)=> sortKey(b) > sortKey(a) ? 1 : -1);
   state.hosoEv = ev;
 
-  html += '<div class="sec-t">LỊCH SỬ XE</div>'
+  html += '<div class="sec-t">LỊCH SỬ PHƯƠNG TIỆN</div>'
        + '<div class="chips" id="hsChips">'
        + '<button data-t="all" class="on">Tất cả</button>'
        + '<button data-t="bh">Báo hỏng</button>'
@@ -452,9 +452,9 @@ function renderBaoHong(){
    +'<div class="fbox"><div class="fbox-head"><span>BÁO HỎNG — ' + esc(XE) + '</span></div>'
    +'<div class="frow"><label>Người báo</label><select id="bhNguoi">'+opts+'</select>'
    +'<input type="text" id="bhNguoiKhac" placeholder="Gõ tên người báo" style="display:none;margin-top:7px"></div>'
-   +'<div class="frow"><label>Tình trạng xe</label><div class="seg2">'
+   +'<div class="frow"><label>Tình trạng phương tiện</label><div class="seg2">'
    +'<button id="bhTT1" class="on">Còn chạy được</button><button id="bhTT2">Chết máy / nằm bãi</button></div></div>'
-   +'<div class="frow"><label>Mô tả hư hỏng</label><textarea id="bhMoTa" placeholder="Vd: kèn không kêu, rỉ nhớt thủy lực, bể đèn sau…"></textarea></div>'
+   +'<div class="frow"><label>Mô tả hư hỏng</label><textarea id="bhMoTa" placeholder="Vd: rỉ nhớt thủy lực, đứt cáp, kẹt phanh, hư đèn, kèn không kêu…"></textarea></div>'
    +'<div class="frow"><label>Ngày</label><input type="date" id="bhNgay" required value="'+todayISO()+'"></div>'
    +'</div>';
   $("bhNguoi").onchange = ()=>{ $("bhNguoiKhac").style.display = $("bhNguoi").value==="__khac" ? "block" : "none"; };
@@ -463,7 +463,7 @@ function renderBaoHong(){
   $("bhTT2").onclick = ()=>{ tt="Chết máy / nằm bãi"; $("bhTT2").className="on bad"; $("bhTT1").className=""; };
 
   $("bar").classList.add("show");
-  $("barSum").innerHTML = "Báo hỏng xe <b>"+esc(XE)+"</b>";
+  $("barSum").innerHTML = "Báo hỏng <b>"+esc(XE)+"</b>";
   const btn = $("btnSend");
   btn.disabled = false; btn.textContent = "Gửi báo hỏng";
   btn.onclick = ()=>{
@@ -586,7 +586,7 @@ function renderSuaChua(){
    +'<div class="frow"><label>Sự cố tham chiếu (nếu sửa theo báo hỏng)</label><select id="scBH">'+bhOpts+'</select></div>'
    +'<div class="frow"><label>Người sửa / người ghi</label><input type="text" id="scNguoi" placeholder="Vd: Vân, Học, Ân…"></div>'
    +'<div class="frow"><label>Ngày</label><input type="date" id="scNgay" required value="'+todayISO()+'"></div>'
-   +'<div class="frow"><label>Ghi chú</label><input type="text" id="scNote" placeholder="Vd: mượn cho xe khác, thay cho NB05…"></div>'
+   +'<div class="frow"><label>Ghi chú</label><input type="text" id="scNote" placeholder="Vd: mượn cho phương tiện khác, thay cho NB05…"></div>'
    + adjustRowHTML()
    +'</div>';
   bindSlipSearch("sc"); bindAdjust();
@@ -629,7 +629,7 @@ function renderBaoDuong(){
   $("main").innerHTML =
     '<div class="fbox"><div class="fbox-head"><span>GHI BẢO DƯỠNG — '+esc(XE)+'</span></div>'
    +'<div class="frow"><label>Hạng mục vừa làm</label><div class="radio-list" id="hmList">'+radios+'</div></div>'
-   +'<div class="frow" id="gioRow" style="display:none"><label>Số giờ trên đồng hồ xe lúc bảo dưỡng</label><input type="number" id="bdGio" inputmode="numeric" placeholder="Vd: 12340"></div>'
+   +'<div class="frow" id="gioRow" style="display:none"><label>Số giờ trên đồng hồ máy lúc bảo dưỡng</label><input type="number" id="bdGio" inputmode="numeric" placeholder="Vd: 12340"></div>'
    +'<div class="frow"><label>Ngày</label><input type="date" id="bdNgay" required value="'+todayISO()+'"></div>'
    +'<div class="frow"><label>Người ghi</label><input type="text" id="bdNguoi" value="Bình"></div>'
    +'<div class="frow"><label>Ghi chú</label><input type="text" id="bdNote" placeholder="(không bắt buộc)"></div>'
@@ -644,7 +644,7 @@ function renderBaoDuong(){
     };
   });
   $("bar").classList.add("show");
-  $("barSum").innerHTML = "Bảo dưỡng xe <b>"+esc(XE)+"</b>";
+  $("barSum").innerHTML = "Bảo dưỡng <b>"+esc(XE)+"</b>";
   const btn = $("btnSend");
   btn.disabled = !hm.length; btn.textContent = "Ghi bảo dưỡng";
   btn.onclick = ()=>{
@@ -720,7 +720,7 @@ function renderXuat(){
    + slipBoxHTML("PHIẾU XUẤT KHO")
    +'<div class="frow"><label>Người nhận (thợ lên lãnh)</label><input type="text" id="xkNhan" list="dlNhan" placeholder="Vd: Học, Ân, Trọng…">'+dl+'</div>'
    +'<div class="frow"><label>Hạng mục xuất</label><select id="xkHM">'+hmOpts+'</select></div>'
-   +'<div class="frow"><label>Cho xe (nếu biết — không bắt buộc)</label><select id="xkXe"><option value="">— Không gắn xe cụ thể —</option></select></div>'
+   +'<div class="frow"><label>Cho phương tiện nào (nếu biết — không bắt buộc)</label><select id="xkXe"><option value="">— Không gắn phương tiện cụ thể —</option></select></div>'
    +'<div class="frow"><label>Lý do xuất</label><input type="text" id="xkNote" placeholder="Vd: thay đèn sau NB05, bảo dưỡng định kỳ…"></div>'
    +'<div class="frow"><label>Người gửi</label><input type="text" id="xkNguoi" value="Vân"></div>'
    +'<div class="frow"><label>Ngày</label><input type="date" id="xkNgay" required value="'+todayISO()+'"></div>'
@@ -731,7 +731,7 @@ function renderXuat(){
     const hm = $("xkHM").value;
     const map = {"XE NÂNG HÀNG":"XE NÂNG HÀNG","XE NÂNG RỖNG":"XE NÂNG RỖNG","ĐẦU KÉO":"ĐẦU KÉO","CẨU KHUNG":"CẨU KHUNG","CẨU SUMITOMO":"CẨU SUMITOMO"};
     const list = state.data.xe.filter(x => !map[hm] || x.loai === map[hm]);
-    $("xkXe").innerHTML = '<option value="">— Không gắn xe cụ thể —</option>' + list.map(x=>'<option>'+esc(x.ma)+'</option>').join("");
+    $("xkXe").innerHTML = '<option value="">— Không gắn phương tiện cụ thể —</option>' + list.map(x=>'<option>'+esc(x.ma)+'</option>').join("");
   }
   fillXe();
   $("xkHM").onchange = fillXe;
@@ -873,7 +873,7 @@ function renderDash(){
   // Lưới đội xe theo nhóm
   const groups = {};
   d.xe.forEach(x => { (groups[x.loai] = groups[x.loai] || []).push(x); });
-  html += '<div class="sec-t">TRẠNG THÁI ĐỘI XE</div>';
+  html += '<div class="sec-t">TRẠNG THÁI PHƯƠNG TIỆN</div>';
   Object.keys(groups).forEach(g => {
     html += '<div class="dash-note" style="margin:6px 0 5px;font-weight:700">'+esc(g)+'</div><div class="fleet">';
     groups[g].forEach(x => {
@@ -906,7 +906,7 @@ function renderDash(){
          + '<div class="due">Hạn <b>'+esc(h.nextNgay)+'</b> — còn '+h.daysLeft+' ngày</div></div>';
   });
 
-  html += '<div class="sec-t">MỐC GIỜ MÁY (chu kỳ theo giờ — so với đồng hồ trên xe)</div>'
+  html += '<div class="sec-t">MỐC GIỜ MÁY (chu kỳ theo giờ — so với đồng hồ trên máy)</div>'
        + '<table class="gio-table"><tr><th>Xe</th><th>Hạng mục</th><th>Mốc gần nhất</th><th>Kỳ tới</th></tr>';
   gio.forEach(h => {
     html += '<tr><td><b>'+esc(h.maXe)+'</b></td><td>'+esc(h.hangMuc)+'</td>'
