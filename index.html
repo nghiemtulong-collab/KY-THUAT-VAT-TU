@@ -151,6 +151,30 @@ body.adjusting .fbox.slipbox .fbox-head{background:var(--danger)}
 .doc-link{display:block;background:var(--safety);color:var(--deep);font-weight:800;border-radius:10px;padding:12px;margin-bottom:12px;text-decoration:none;font-size:15px}
 .retry{margin-top:8px}
 .retry a{color:var(--muted);font-size:13.5px}
+
+/* Dashboard tổng */
+body.dash .wrap{max-width:760px}
+body.dash header .hd-inner{max-width:760px}
+.counts{display:flex;gap:8px;margin:12px 0 4px}
+.count-card{flex:1;background:var(--white);border:1px solid var(--line);border-radius:12px;padding:10px 8px;text-align:center}
+.count-card .num{font-size:26px;font-weight:800;color:var(--deep-2);line-height:1.1}
+.count-card .lb{font-size:11px;color:var(--muted);font-weight:700;margin-top:2px}
+.count-card.bad{border-color:var(--danger);background:#FDF3F2}
+.count-card.bad .num{color:var(--danger)}
+.fleet{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:7px}
+.fleet a{display:block;border-radius:10px;padding:8px 4px;text-align:center;text-decoration:none;border:1.5px solid var(--line);background:var(--white)}
+.fleet .fc{font-size:15px;font-weight:800;color:var(--deep-2)}
+.fleet .fs{font-size:10px;font-weight:700;color:var(--ok);margin-top:1px}
+.fleet a.warn{border-color:var(--safety);background:#FFF7EB}
+.fleet a.warn .fs{color:var(--safety-dark)}
+.fleet a.dead{border-color:var(--danger);background:#FDECEA}
+.fleet a.dead .fc,.fleet a.dead .fs{color:var(--danger)}
+.gio-table{width:100%;border-collapse:collapse;background:var(--white);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:12.5px}
+.gio-table th{background:var(--paper);text-align:left;padding:7px 9px;font-size:11.5px;color:var(--muted)}
+.gio-table td{padding:7px 9px;border-top:1px solid var(--line)}
+.gio-table td b{color:var(--deep-2)}
+.dash-note{font-size:11.5px;color:var(--muted);margin:4px 0 0}
+.seen-btn{border:1.5px solid var(--line);border-radius:10px;background:var(--white);font-family:inherit;font-weight:700;font-size:12.5px;padding:8px 13px;cursor:pointer;color:var(--deep-2)}
 </style>
 </head>
 <body>
@@ -211,7 +235,8 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5D
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const XE = (params.get("xe") || "").toUpperCase().trim();
-const MODE = XE ? "xe" : "kho";
+const DASH = (params.get("view") || "").toLowerCase() === "tong";
+const MODE = DASH ? "dash" : (XE ? "xe" : "kho");
 
 const TO_TRUONG = ["Học (tổ máy XN)","Thông (tổ điện XN)","Ân (tổ máy ĐK)","Dũng (tổ điện ĐK)","Trọng (tổ cơ khí)","Nhi (tổ điện CN)"];
 const NHOM_ORDER = ["MÁY XN","ĐIỆN XN","MÁY ĐK","ĐIỆN ĐK","CƠ KHÍ","ĐIỆN CN"];
@@ -242,6 +267,25 @@ async function loadData(){
 
 function initUI(){
   const d = state.data;
+  if(MODE === "dash"){
+    document.body.classList.add("dash");
+    $("hdSub").textContent = "Bảng theo dõi tổng — tự cập nhật mỗi 60 giây";
+    renderDash();
+    if(!state.dashTimer){
+      state.dashTimer = setInterval(async ()=>{
+        try{
+          const res = await fetch(SCRIPT_URL + "?mode=view");
+          const j = await res.json();
+          if(j.status === "ok"){
+            state.data = j;
+            j.stock.forEach(r => r.key = stripAccent(r.ten + " " + r.ma));
+            renderDash();
+          }
+        }catch(_){ /* giữ dữ liệu cũ, thử lại vòng sau */ }
+      }, 60000);
+    }
+    return;
+  }
   if(MODE === "xe"){
     const xe = d.xe.find(x => x.ma === XE);
     if(!xe){
@@ -666,6 +710,123 @@ function renderLsList(){
       +'<div class="sub">Ngày '+esc(h.ngay)+' · gửi '+esc(h.ts)+(h.nguoi?' · <b>'+esc(h.nguoi)+'</b>':'')+(h.sub?' · '+esc(h.sub):'')+'</div>';
     box.appendChild(div);
   });
+}
+
+/* ==================== DASHBOARD TỔNG (?view=tong) ==================== */
+function parseVN(s){ const m = String(s||"").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? new Date(+m[3], +m[2]-1, +m[1]) : null; }
+function ageDays(ngayVN){
+  const d = parseVN(ngayVN); if(!d) return 0;
+  const t = new Date(); t.setHours(0,0,0,0);
+  return Math.max(0, Math.round((t - d) / 86400000));
+}
+function renderDash(){
+  const d = state.data;
+  const todayVN = isoToVN(todayISO());
+
+  // Badge phiếu mới: so tổng số dòng lịch sử với mốc đã xem (localStorage máy này)
+  const total = d.history.BAO_HONG.length + d.history.SUA_CHUA.length + d.history.NHAP.length + d.history.BAO_DUONG.length + d.history.DE_XUAT.length;
+  let seen = 0; try{ seen = parseInt(localStorage.getItem("ktvt_seen") || "0", 10) || 0; }catch(_){}
+  const fresh = Math.max(0, total - seen);
+  document.title = (fresh > 0 ? "(" + fresh + ") " : "") + "Kỹ thuật vật tư — ICD Phúc Long";
+
+  const open = d.openBH.map(o => ({...o, age: ageDays(o.ngay), dead: /chết/i.test(o.tinhTrang||"")}))
+                       .sort((a,b) => b.age - a.age);
+  const deadXe = {}; const warnXe = {}; const oldestXe = {};
+  open.forEach(o => {
+    if(o.dead) deadXe[o.maXe] = true; else warnXe[o.maXe] = true;
+    if(oldestXe[o.maXe] == null || o.age > oldestXe[o.maXe]) oldestXe[o.maXe] = o.age;
+  });
+
+  const lich = d.hangmuc.filter(h => h.loai !== "GIO" && !h.noBase);
+  const over = lich.filter(h => h.overdue).sort((a,b) => a.daysLeft - b.daysLeft);
+  const soon = lich.filter(h => !h.overdue && h.daysLeft <= 7).sort((a,b) => a.daysLeft - b.daysLeft);
+  const gio = d.hangmuc.filter(h => h.loai === "GIO");
+  const low = d.stock.filter(r => r.min > 0 && r.ton <= r.min);
+
+  const acts = [];
+  d.history.BAO_HONG.filter(r=>r.ngay===todayVN).forEach(r=>acts.push({ts:r.ts, tag:'<span class="hist-tag bh">BÁO HỎNG</span>', top:esc(r.maXe)+" · "+esc(r.tinhTrang), sub:esc(r.nguoi)+" · "+esc(r.moTa)}));
+  d.history.SUA_CHUA.filter(r=>r.ngay===todayVN).forEach(r=>acts.push({ts:r.ts, tag:'<span class="hist-tag sc">XUẤT/SC</span>', top:esc(r.vt)+" — "+r.sl+" "+esc(r.dvt), sub:[r.maXe?"xe "+esc(r.maXe):"", r.nguoiNhan?"nhận "+esc(r.nguoiNhan):"", esc(r.nguoi)].filter(Boolean).join(" · ")}));
+  d.history.NHAP.filter(r=>r.ngay===todayVN).forEach(r=>acts.push({ts:r.ts, tag:'<span class="hist-tag n">NHẬP</span>', top:esc(r.vt)+" — "+r.sl+" "+esc(r.dvt), sub:esc(r.nguoi)}));
+  d.history.BAO_DUONG.filter(r=>r.ngay===todayVN).forEach(r=>acts.push({ts:r.ts, tag:'<span class="hist-tag bd">BẢO DƯỠNG</span>', top:esc(r.maXe)+" · "+esc(r.hangMuc), sub:(r.soGio!=null?r.soGio+"h · ":"")+esc(r.nguoi)}));
+  d.history.DE_XUAT.filter(r=>r.ngay===todayVN).forEach(r=>acts.push({ts:r.ts, tag:'<span class="hist-tag d">ĐỀ XUẤT</span>', top:esc(r.vt)+" — "+r.sl+" "+esc(r.dvt), sub:esc(r.nguoi)}));
+  acts.sort((a,b) => b.ts > a.ts ? 1 : -1);
+
+  const base = location.origin + location.pathname;
+  let html =
+    '<div class="counts">'
+   +'<div class="count-card'+(open.length?' bad':'')+'"><div class="num">'+open.length+'</div><div class="lb">SỰ CỐ MỞ</div></div>'
+   +'<div class="count-card'+(over.length?' bad':'')+'"><div class="num">'+over.length+'</div><div class="lb">QUÁ HẠN BD</div></div>'
+   +'<div class="count-card'+(low.length?' bad':'')+'"><div class="num">'+low.length+'</div><div class="lb">DƯỚI NGƯỠNG VT</div></div>'
+   +'</div>'
+   +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">'
+   +'<div class="dash-note">Cập nhật '+esc(d.updated)+' · số ghi nhận từ phiếu, chưa phải kiểm kê'+(fresh?' · <b style="color:var(--danger)">'+fresh+' phiếu mới</b>':'')+'</div>'
+   +'<button class="seen-btn" id="btnSeen">Đánh dấu đã xem</button></div>';
+
+  // Lưới đội xe theo nhóm
+  const groups = {};
+  d.xe.forEach(x => { (groups[x.loai] = groups[x.loai] || []).push(x); });
+  html += '<div class="sec-t">TRẠNG THÁI ĐỘI XE</div>';
+  Object.keys(groups).forEach(g => {
+    html += '<div class="dash-note" style="margin:6px 0 5px;font-weight:700">'+esc(g)+'</div><div class="fleet">';
+    groups[g].forEach(x => {
+      const dead = deadXe[x.ma], warn = warnXe[x.ma];
+      const cls = dead ? "dead" : (warn ? "warn" : "");
+      const st = dead ? "CHẾT "+(oldestXe[x.ma]||0)+" ngày" : (warn ? "Sự cố "+(oldestXe[x.ma]||0)+" ngày" : "OK");
+      html += '<a class="'+cls+'" href="'+base+'?xe='+encodeURIComponent(x.ma)+'"><div class="fc">'+esc(x.ma)+'</div><div class="fs">'+st+'</div></a>';
+    });
+    html += '</div>';
+  });
+
+  html += '<div class="sec-t">SỰ CỐ ĐANG MỞ ('+open.length+') — lâu nhất trước</div>';
+  if(!open.length) html += '<div class="empty-note">Không có sự cố mở.</div>';
+  open.forEach(o => {
+    html += '<div class="hist-row'+(o.dead?' neg':'')+'"><div class="top"><span><span class="hist-tag bh">'+(o.dead?"CHẾT MÁY":"MỞ")+'</span><b>'+esc(o.maXe)+'</b> — '+esc(o.moTa)+'</span><b>'+o.age+' ngày</b></div>'
+         + '<div class="sub">Ngày '+esc(o.ngay)+' · '+esc(o.nguoi)+' · '+esc(o.maBH)+'</div></div>';
+  });
+
+  html += '<div class="sec-t">QUÁ HẠN BẢO DƯỠNG ('+over.length+')</div>';
+  if(!over.length) html += '<div class="empty-note">Không có hạng mục quá hạn.</div>';
+  over.forEach(h => {
+    html += '<div class="bd-card over"><div class="nm">'+esc(h.maXe)+' · '+esc(h.hangMuc)+'</div>'
+         + '<div class="due">Hạn '+esc(h.nextNgay)+' — <b>trễ '+Math.abs(h.daysLeft)+' ngày</b></div></div>';
+  });
+
+  html += '<div class="sec-t">SẮP TỚI HẠN — 7 NGÀY ('+soon.length+')</div>';
+  if(!soon.length) html += '<div class="empty-note">Không có hạng mục nào tới hạn trong 7 ngày.</div>';
+  soon.forEach(h => {
+    html += '<div class="bd-card"><div class="nm">'+esc(h.maXe)+' · '+esc(h.hangMuc)+'</div>'
+         + '<div class="due">Hạn <b>'+esc(h.nextNgay)+'</b> — còn '+h.daysLeft+' ngày</div></div>';
+  });
+
+  html += '<div class="sec-t">MỐC GIỜ MÁY (chu kỳ theo giờ — so với đồng hồ trên xe)</div>'
+       + '<table class="gio-table"><tr><th>Xe</th><th>Hạng mục</th><th>Mốc gần nhất</th><th>Kỳ tới</th></tr>';
+  gio.forEach(h => {
+    html += '<tr><td><b>'+esc(h.maXe)+'</b></td><td>'+esc(h.hangMuc)+'</td>'
+         + (h.noBase ? '<td colspan="2"><span class="tag nobase">CHƯA CÓ MỐC GỐC</span></td>'
+                     : '<td>'+h.lastGio+'h'+(h.lastNgay?' ('+esc(h.lastNgay)+')':'')+'</td><td><b>'+h.nextGio+'h</b></td>')
+         + '</tr>';
+  });
+  html += '</table>';
+
+  if(low.length){
+    html += '<div class="sec-t">VẬT TƯ DƯỚI NGƯỠNG ('+low.length+')</div>';
+    low.forEach(r => {
+      html += '<div class="stock-row low"><div><div class="nm">'+esc(r.ten)+'</div><div class="cd">'+esc(r.ma)+' · Min '+r.min+'</div></div>'
+           + '<div class="ton">'+r.ton+' <small>'+esc(r.dvt)+'</small></div></div>';
+    });
+  }
+
+  html += '<div class="sec-t">HOẠT ĐỘNG HÔM NAY ('+acts.length+' phiếu)</div>';
+  if(!acts.length) html += '<div class="empty-note">Chưa có phiếu nào hôm nay.</div>';
+  acts.forEach(a => {
+    html += '<div class="hist-row"><div class="top"><span>'+a.tag+a.top+'</span><b>'+esc(a.ts)+'</b></div><div class="sub">'+a.sub+'</div></div>';
+  });
+
+  $("main").innerHTML = html;
+  $("btnSeen").onclick = ()=>{
+    try{ localStorage.setItem("ktvt_seen", String(total)); }catch(_){}
+    renderDash();
+  };
 }
 
 /* ==================== NHẬP KHO (PIN_VAN) ==================== */
