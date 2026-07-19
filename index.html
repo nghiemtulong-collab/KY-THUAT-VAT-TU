@@ -230,6 +230,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
+const APP_VERSION = "2026.07.19-RC2";
 // ==========================================================
 
 const $ = id => document.getElementById(id);
@@ -247,8 +248,30 @@ function stripAccent(s){
   return String(s).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").replace(/Đ/g,"D").toLowerCase();
 }
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
-function todayISO(){ return new Date().toISOString().slice(0,10); }
-function isoToVN(iso){ const d = iso.split("-"); return d[2]+"/"+d[1]+"/"+d[0]; }
+function todayISO(){
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return y+"-"+m+"-"+day;
+}
+function validISODate(iso){
+  const m = String(iso||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return false;
+  const d = new Date(+m[1], +m[2]-1, +m[3]);
+  return d.getFullYear()===+m[1] && d.getMonth()===+m[2]-1 && d.getDate()===+m[3];
+}
+function isoToVN(iso){
+  if(!validISODate(iso)) return "";
+  const d = iso.split("-");
+  return d[2]+"/"+d[1]+"/"+d[0];
+}
+function requireDateVN(id){
+  const el = $(id);
+  const out = isoToVN(el && el.value);
+  if(!out){ alert("Chọn ngày phiếu hợp lệ."); if(el) el.focus(); return null; }
+  return out;
+}
 function vnKey(ngay){ const m = String(ngay||"").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? m[3]+m[2].padStart(2,"0")+m[1].padStart(2,"0") : "00000000"; }
 function sortKey(h){ return vnKey(h.ngay) + " " + (String(h.ts||"").split(" ")[1] || ""); }
 function navHTML(cur){
@@ -263,10 +286,11 @@ function navHTML(cur){
 async function loadData(){
   $("main").innerHTML = '<div class="load">Đang tải dữ liệu…</div>';
   try{
-    const res = await fetch(SCRIPT_URL + "?mode=view");
+    const res = await fetch(SCRIPT_URL + "?mode=view&_=" + Date.now(), {cache:"no-store"});
     const j = await res.json();
     if(j.status !== "ok") throw new Error(j.message || "lỗi");
     state.data = j;
+    document.documentElement.dataset.appVersion = APP_VERSION;
     j.stock.forEach(r => r.key = stripAccent(r.ten + " " + r.ma));
     initUI();
   }catch(err){
@@ -283,7 +307,7 @@ function initUI(){
     if(!state.dashTimer){
       state.dashTimer = setInterval(async ()=>{
         try{
-          const res = await fetch(SCRIPT_URL + "?mode=view");
+          const res = await fetch(SCRIPT_URL + "?mode=view&_=" + Date.now(), {cache:"no-store"});
           const j = await res.json();
           if(j.status === "ok"){
             state.data = j;
@@ -431,7 +455,7 @@ function renderBaoHong(){
    +'<div class="frow"><label>Tình trạng xe</label><div class="seg2">'
    +'<button id="bhTT1" class="on">Còn chạy được</button><button id="bhTT2">Chết máy / nằm bãi</button></div></div>'
    +'<div class="frow"><label>Mô tả hư hỏng</label><textarea id="bhMoTa" placeholder="Vd: kèn không kêu, rỉ nhớt thủy lực, bể đèn sau…"></textarea></div>'
-   +'<div class="frow"><label>Ngày</label><input type="date" id="bhNgay" value="'+todayISO()+'"></div>'
+   +'<div class="frow"><label>Ngày</label><input type="date" id="bhNgay" required value="'+todayISO()+'"></div>'
    +'</div>';
   $("bhNguoi").onchange = ()=>{ $("bhNguoiKhac").style.display = $("bhNguoi").value==="__khac" ? "block" : "none"; };
   let tt = "Còn chạy được";
@@ -447,13 +471,14 @@ function renderBaoHong(){
     const moTa = $("bhMoTa").value.trim();
     if(!nguoi){ alert("Chọn hoặc gõ tên người báo."); return; }
     if(!moTa){ alert("Gõ mô tả hư hỏng."); return; }
+    const ngay = requireDateVN("bhNgay"); if(!ngay) return;
     openConfirm({
       title: "Xác nhận BÁO HỎNG — " + XE,
       summary: "• Người báo: <b>"+esc(nguoi)+"</b><br>• Tình trạng: <b>"+esc(tt)+"</b><br>• "+esc(moTa),
       needPin: null,
-      payload: { type:"BAO_HONG", maXe:XE, nguoi:nguoi, tinhTrang:tt, moTa:moTa, date:isoToVN($("bhNgay").value) },
-      doneMsg: j => "Đã ghi nhật ký báo hỏng "+(j.maBH?("("+j.maBH+")"):"")+". Nhớ báo group nếu chưa báo.",
-      after: ()=>openTab("hoso")
+      payload: { type:"BAO_HONG", maXe:XE, nguoi:nguoi, tinhTrang:tt, moTa:moTa, date:ngay },
+      doneMsg: j => "Đã ghi nhật ký báo hỏng "+(j.maBH?"("+j.maBH+")":"")+". Nhớ báo group nếu chưa báo."+(j.warn?" "+j.warn:""),
+      after: ()=>{ loadData(); }
     });
   };
 }
@@ -523,7 +548,32 @@ function adjustRowHTML(){
   return '<div class="frow adjust-row"><input type="checkbox" id="adjChk"><div><div class="lbl">Phiếu điều chỉnh (sửa phiếu gửi nhầm)</div><div class="sub">Cho số lượng ÂM để trừ ngược phiếu sai. Bắt buộc ghi chú lý do.</div></div></div>';
 }
 function bindAdjust(){
-  $("adjChk").onchange = ()=>document.body.classList.toggle("adjusting", $("adjChk").checked);
+  $("adjChk").onchange = ()=>{
+    const on = $("adjChk").checked;
+    document.body.classList.toggle("adjusting", on);
+    // Phiếu thường không được giữ số âm sau khi bỏ tick điều chỉnh.
+    if(!on){
+      Object.values(state.slip).forEach(r=>{ if(r.qty <= 0) r.qty = Math.max(1, Math.abs(r.qty)); });
+      renderSlipRows();
+    }
+    // Điều chỉnh tồn kho không được dùng để đóng sự cố.
+    const bh = $("scBH");
+    if(bh){
+      if(on) bh.value = "";
+      bh.disabled = on;
+    }
+  };
+}
+function validateSlipSign(list, isAdjustment){
+  if(isAdjustment && list.some(r=>r.qty>=0)){
+    alert("Phiếu điều chỉnh bắt buộc tất cả số lượng là số ÂM.");
+    return false;
+  }
+  if(!isAdjustment && list.some(r=>r.qty<=0)){
+    alert("Phiếu thường bắt buộc tất cả số lượng là số DƯƠNG.");
+    return false;
+  }
+  return true;
 }
 
 /* ==================== SỬA CHỮA (PIN_VAN) ==================== */
@@ -535,7 +585,7 @@ function renderSuaChua(){
    + slipBoxHTML("PHIẾU SỬA CHỮA — " + esc(XE))
    +'<div class="frow"><label>Sự cố tham chiếu (nếu sửa theo báo hỏng)</label><select id="scBH">'+bhOpts+'</select></div>'
    +'<div class="frow"><label>Người sửa / người ghi</label><input type="text" id="scNguoi" placeholder="Vd: Vân, Học, Ân…"></div>'
-   +'<div class="frow"><label>Ngày</label><input type="date" id="scNgay" value="'+todayISO()+'"></div>'
+   +'<div class="frow"><label>Ngày</label><input type="date" id="scNgay" required value="'+todayISO()+'"></div>'
    +'<div class="frow"><label>Ghi chú</label><input type="text" id="scNote" placeholder="Vd: mượn cho xe khác, thay cho NB05…"></div>'
    + adjustRowHTML()
    +'</div>';
@@ -547,16 +597,20 @@ function renderSuaChua(){
   btn.onclick = ()=>{
     const list = Object.values(state.slip);
     if(!list.length) return;
+    const isAdjustment = $("adjChk").checked;
+    if(!validateSlipSign(list, isAdjustment)) return;
     if(!$("scNguoi").value.trim()){ alert("Ghi tên người sửa."); return; }
-    if($("adjChk").checked && !$("scNote").value.trim()){ alert("Phiếu điều chỉnh bắt buộc ghi chú lý do."); return; }
+    if(isAdjustment && !$("scNote").value.trim()){ alert("Phiếu điều chỉnh bắt buộc ghi chú lý do."); return; }
+    if(isAdjustment && $("scBH").value){ alert("Phiếu điều chỉnh không được đóng sự cố."); return; }
+    const ngay = requireDateVN("scNgay"); if(!ngay) return;
     openConfirm({
-      title: "Xác nhận PHIẾU "+($("adjChk").checked?"ĐIỀU CHỈNH ":"")+"SỬA CHỮA — "+XE,
+      title: "Xác nhận PHIẾU "+(isAdjustment?"ĐIỀU CHỈNH ":"")+"SỬA CHỮA — "+XE,
       summary: list.map(r=>"• "+esc(r.ten)+" — <b>"+r.qty+" "+esc(r.dvt)+"</b>").join("<br>")
              + ($("scBH").value ? "<br>Đóng sự cố: <b>"+esc($("scBH").value)+"</b>" : ""),
       needPin: "VAN",
       payload: { type:"SUA_CHUA", maXe:XE, nguoi:$("scNguoi").value.trim(), maBH:$("scBH").value,
                  hangMuc:(state.data.xe.find(x=>x.ma===XE)||{}).loai||"", nguoiNhan:$("scNguoi").value.trim(),
-                 note:$("scNote").value.trim(), date:isoToVN($("scNgay").value),
+                 note:$("scNote").value.trim(), date:ngay, isAdjustment:isAdjustment,
                  items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})) },
       doneMsg: ()=> "Đã ghi "+list.length+" mã vật tư vào sổ sửa chữa "+XE+". Tồn kho đã trừ tương ứng.",
       after: ()=>{ loadData(); }
@@ -576,7 +630,7 @@ function renderBaoDuong(){
     '<div class="fbox"><div class="fbox-head"><span>GHI BẢO DƯỠNG — '+esc(XE)+'</span></div>'
    +'<div class="frow"><label>Hạng mục vừa làm</label><div class="radio-list" id="hmList">'+radios+'</div></div>'
    +'<div class="frow" id="gioRow" style="display:none"><label>Số giờ trên đồng hồ xe lúc bảo dưỡng</label><input type="number" id="bdGio" inputmode="numeric" placeholder="Vd: 12340"></div>'
-   +'<div class="frow"><label>Ngày</label><input type="date" id="bdNgay" value="'+todayISO()+'"></div>'
+   +'<div class="frow"><label>Ngày</label><input type="date" id="bdNgay" required value="'+todayISO()+'"></div>'
    +'<div class="frow"><label>Người ghi</label><input type="text" id="bdNguoi" value="Bình"></div>'
    +'<div class="frow"><label>Ghi chú</label><input type="text" id="bdNote" placeholder="(không bắt buộc)"></div>'
    +'</div>';
@@ -597,13 +651,15 @@ function renderBaoDuong(){
     if(!sel){ alert("Chọn hạng mục vừa làm."); return; }
     const gio = $("bdGio").value.trim();
     if(sel.loai==="GIO" && !gio){ alert("Hạng mục theo giờ — bắt buộc nhập số giờ đồng hồ. Không có số này hệ không tính được kỳ tới."); return; }
+    if(sel.loai==="GIO" && (!Number.isInteger(Number(gio)) || Number(gio)<0)){ alert("Số giờ đồng hồ phải là số nguyên không âm."); return; }
     if(!$("bdNguoi").value.trim()){ alert("Ghi tên người ghi."); return; }
+    const ngay = requireDateVN("bdNgay"); if(!ngay) return;
     openConfirm({
       title: "Xác nhận BẢO DƯỠNG — "+XE,
-      summary: "• Hạng mục: <b>"+esc(sel.hangMuc)+"</b>"+(sel.loai==="GIO"?"<br>• Đồng hồ: <b>"+esc(gio)+"h</b> → kỳ tới lúc <b>"+(Number(gio)+sel.chuKy)+"h</b>":"")+"<br>• Ngày: "+isoToVN($("bdNgay").value),
+      summary: "• Hạng mục: <b>"+esc(sel.hangMuc)+"</b>"+(sel.loai==="GIO"?"<br>• Đồng hồ: <b>"+esc(gio)+"h</b> → kỳ tới lúc <b>"+(Number(gio)+sel.chuKy)+"h</b>":"")+"<br>• Ngày: "+ngay,
       needPin: "BINH",
       payload: { type:"BAO_DUONG", maXe:XE, hangMuc:sel.hangMuc, soGio:(sel.loai==="GIO"?Number(gio):""),
-                 nguoi:$("bdNguoi").value.trim(), note:$("bdNote").value.trim(), date:isoToVN($("bdNgay").value) },
+                 nguoi:$("bdNguoi").value.trim(), note:$("bdNote").value.trim(), date:ngay },
       doneMsg: ()=> "Đã ghi bảo dưỡng \""+sel.hangMuc+"\" cho "+XE+". Hạn kỳ tới đã cập nhật.",
       after: ()=>{ loadData(); }
     });
@@ -663,7 +719,7 @@ function renderXuat(){
    +'<div class="frow"><label>Cho xe (nếu biết — không bắt buộc)</label><select id="xkXe"><option value="">— Không gắn xe cụ thể —</option></select></div>'
    +'<div class="frow"><label>Lý do xuất</label><input type="text" id="xkNote" placeholder="Vd: thay đèn sau NB05, bảo dưỡng định kỳ…"></div>'
    +'<div class="frow"><label>Người gửi</label><input type="text" id="xkNguoi" value="Vân"></div>'
-   +'<div class="frow"><label>Ngày</label><input type="date" id="xkNgay" value="'+todayISO()+'"></div>'
+   +'<div class="frow"><label>Ngày</label><input type="date" id="xkNgay" required value="'+todayISO()+'"></div>'
    + adjustRowHTML()
    +'</div>';
   bindSlipSearch("xk"); bindAdjust();
@@ -682,18 +738,21 @@ function renderXuat(){
   btn.onclick = ()=>{
     const list = Object.values(state.slip);
     if(!list.length) return;
+    const isAdjustment = $("adjChk").checked;
+    if(!validateSlipSign(list, isAdjustment)) return;
     if(!$("xkNhan").value.trim()){ alert("Ghi tên người nhận."); return; }
     if(!$("xkHM").value){ alert("Chọn hạng mục xuất."); return; }
     if(!$("xkNote").value.trim()){ alert("Ghi lý do xuất."); return; }
-    if($("adjChk").checked && !$("xkNote").value.trim()){ alert("Phiếu điều chỉnh bắt buộc ghi chú lý do."); return; }
+    if(isAdjustment && !$("xkNote").value.trim()){ alert("Phiếu điều chỉnh bắt buộc ghi chú lý do."); return; }
+    const ngay = requireDateVN("xkNgay"); if(!ngay) return;
     openConfirm({
-      title: "Xác nhận PHIẾU "+($("adjChk").checked?"ĐIỀU CHỈNH ":"")+"XUẤT KHO",
+      title: "Xác nhận PHIẾU "+(isAdjustment?"ĐIỀU CHỈNH ":"")+"XUẤT KHO",
       summary: list.map(r=>"• "+esc(r.ten)+" — <b>"+r.qty+" "+esc(r.dvt)+"</b>").join("<br>")
              + "<br>Người nhận: <b>"+esc($("xkNhan").value.trim())+"</b> · "+esc($("xkHM").value)
              + ($("xkXe").value ? " · xe <b>"+esc($("xkXe").value)+"</b>" : ""),
       needPin: "VAN",
       payload: { type:"XUAT", maXe:$("xkXe").value, hangMuc:$("xkHM").value, nguoiNhan:$("xkNhan").value.trim(),
-                 nguoi:$("xkNguoi").value.trim(), note:$("xkNote").value.trim(), date:isoToVN($("xkNgay").value),
+                 nguoi:$("xkNguoi").value.trim(), note:$("xkNote").value.trim(), date:ngay, isAdjustment:isAdjustment,
                  items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})) },
       doneMsg: ()=> "Đã ghi "+list.length+" mã vào sổ xuất kho. Tồn đã trừ tương ứng.",
       after: ()=>{ loadData(); }
@@ -760,10 +819,16 @@ function renderDash(){
   const d = state.data;
   const todayVN = isoToVN(todayISO());
 
-  // Badge phiếu mới: so tổng số dòng lịch sử với mốc đã xem (localStorage máy này)
-  const total = d.history.BAO_HONG.length + d.history.SUA_CHUA.length + d.history.NHAP.length + d.history.BAO_DUONG.length + d.history.DE_XUAT.length;
-  let seen = 0; try{ seen = parseInt(localStorage.getItem("ktvt_seen") || "0", 10) || 0; }catch(_){}
-  const fresh = Math.max(0, total - seen);
+  // Badge dựa trên sequence tăng đơn điệu của mỗi lần gửi phiếu, không phụ thuộc số dòng còn lại trong Sheet.
+  const latestSeq = Math.max(0, Number(d.latestSeq || 0));
+  let seen = latestSeq;
+  try{
+    const raw = localStorage.getItem("ktvt_seen_seq");
+    if(raw === null) localStorage.setItem("ktvt_seen_seq", String(latestSeq));
+    else seen = Math.max(0, parseInt(raw,10) || 0);
+    if(latestSeq < seen){ seen = latestSeq; localStorage.setItem("ktvt_seen_seq", String(latestSeq)); }
+  }catch(_){ seen = latestSeq; }
+  const fresh = Math.max(0, latestSeq - seen);
   document.title = (fresh > 0 ? "(" + fresh + ") " : "") + "Kỹ thuật vật tư — ICD Phúc Long";
 
   const open = d.openBH.map(o => ({...o, age: ageDays(o.ngay), dead: /chết/i.test(o.tinhTrang||"")}))
@@ -895,7 +960,7 @@ function renderDash(){
   }
   renderDaList();
   $("btnSeen").onclick = ()=>{
-    try{ localStorage.setItem("ktvt_seen", String(total)); }catch(_){}
+    try{ localStorage.setItem("ktvt_seen_seq", String(latestSeq)); }catch(_){}
     renderDash();
   };
 }
@@ -906,7 +971,7 @@ function renderNhap(){
     slipSearchHTML("nh")
    + slipBoxHTML("PHIẾU NHẬP KHO")
    +'<div class="frow"><label>Người gửi</label><input type="text" id="nhNguoi" value="Vân"></div>'
-   +'<div class="frow"><label>Ngày</label><input type="date" id="nhNgay" value="'+todayISO()+'"></div>'
+   +'<div class="frow"><label>Ngày</label><input type="date" id="nhNgay" required value="'+todayISO()+'"></div>'
    +'<div class="frow"><label>Ghi chú</label><input type="text" id="nhNote" placeholder="(không bắt buộc)"></div>'
    + adjustRowHTML()
    +'</div>';
@@ -918,14 +983,17 @@ function renderNhap(){
   btn.onclick = ()=>{
     const list = Object.values(state.slip);
     if(!list.length) return;
+    const isAdjustment = $("adjChk").checked;
+    if(!validateSlipSign(list, isAdjustment)) return;
     if(!$("nhNguoi").value.trim()){ alert("Ghi tên người gửi."); return; }
-    if($("adjChk").checked && !$("nhNote").value.trim()){ alert("Phiếu điều chỉnh bắt buộc ghi chú lý do."); return; }
+    if(isAdjustment && !$("nhNote").value.trim()){ alert("Phiếu điều chỉnh bắt buộc ghi chú lý do."); return; }
+    const ngay = requireDateVN("nhNgay"); if(!ngay) return;
     openConfirm({
-      title: "Xác nhận PHIẾU "+($("adjChk").checked?"ĐIỀU CHỈNH ":"")+"NHẬP KHO",
+      title: "Xác nhận PHIẾU "+(isAdjustment?"ĐIỀU CHỈNH ":"")+"NHẬP KHO",
       summary: list.map(r=>"• "+esc(r.ten)+" — <b>"+r.qty+" "+esc(r.dvt)+"</b>").join("<br>"),
       needPin: "VAN",
       payload: { type:"NHAP", nguoi:$("nhNguoi").value.trim(), note:$("nhNote").value.trim(),
-                 date:isoToVN($("nhNgay").value), items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})) },
+                 date:ngay, isAdjustment:isAdjustment, items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})) },
       doneMsg: ()=> "Đã ghi "+list.length+" mã vào sổ nhập kho.",
       after: ()=>{ loadData(); }
     });
@@ -941,7 +1009,7 @@ function renderDeXuat(){
    +'<div class="frow"><label>Người đề xuất</label><select id="dxNguoi">'+opts+'</select>'
    +'<input type="text" id="dxNguoiKhac" placeholder="Gõ tên" style="display:none;margin-top:7px"></div>'
    +'<div class="frow"><label>V/v — lý do đề xuất (nên ghi rõ)</label><input type="text" id="dxNote" placeholder="Vd: bổ sung vật tư sửa NB05"></div>'
-   +'<div class="frow"><label>Ngày</label><input type="date" id="dxNgay" value="'+todayISO()+'"></div>'
+   +'<div class="frow"><label>Ngày</label><input type="date" id="dxNgay" required value="'+todayISO()+'"></div>'
    +'<div class="frow"><div class="hint" style="margin:0">Đề xuất là xin cấp — <b>không cộng vào tồn kho</b>. Phiếu in vẫn ký duyệt giấy như quy trình.</div></div>'
    +'</div>';
   bindSlipSearch("dx");
@@ -953,13 +1021,15 @@ function renderDeXuat(){
   btn.onclick = ()=>{
     const list = Object.values(state.slip);
     if(!list.length) return;
+    if(!validateSlipSign(list, false)) return;
     let nguoi = $("dxNguoi").value === "__khac" ? $("dxNguoiKhac").value.trim() : $("dxNguoi").value;
     if(!nguoi){ alert("Chọn người đề xuất."); return; }
+    const ngay = requireDateVN("dxNgay"); if(!ngay) return;
     openConfirm({
       title: "Xác nhận PHIẾU ĐỀ XUẤT",
       summary: "Người đề xuất: <b>"+esc(nguoi)+"</b><br>" + list.map(r=>"• "+esc(r.ten)+" — <b>"+r.qty+" "+esc(r.dvt)+"</b>").join("<br>"),
       needPin: "DX",
-      payload: { type:"DE_XUAT", nguoi:nguoi, note:$("dxNote").value.trim(), date:isoToVN($("dxNgay").value),
+      payload: { type:"DE_XUAT", nguoi:nguoi, note:$("dxNote").value.trim(), date:ngay,
                  items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})) },
       doneMsg: j => "Đã ghi đề xuất vào sổ và gửi email." + (j.warn ? " " + j.warn : ""),
       after: ()=>{ loadData(); }
@@ -995,7 +1065,7 @@ $("btnConfirm").onclick = async ()=>{
   $("ovConfirm").classList.remove("show");
   $("ovSending").classList.add("show");
   try{
-    const res = await fetch(SCRIPT_URL, { method:"POST", body: JSON.stringify(payload) });
+    const res = await fetch(SCRIPT_URL, { method:"POST", body: JSON.stringify(payload), cache:"no-store" });
     let j = null, ok = res.ok, wrongPin = false;
     try{ j = await res.json(); ok = j.status === "ok"; wrongPin = j.status === "wrong_pin"; }catch(_){ }
     $("ovSending").classList.remove("show");
