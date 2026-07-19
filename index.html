@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Kỹ thuật vật tư — ICD Phúc Long</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --deep:#16302B; --deep-2:#1F4A40; --safety:#F28C1B; --safety-dark:#D0730A;
+  --paper:#F4F6F3; --line:#D5DBD2; --ink:#1A2622; --muted:#68766F;
+  --ok:#1E7F4F; --danger:#B3261E; --white:#FFFFFF;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font-family:'Be Vietnam Pro',system-ui,sans-serif;background:var(--paper);color:var(--ink);font-size:16px;line-height:1.45}
+.wrap{max-width:520px;margin:0 auto;padding:0 14px 120px}
+
+header{background:var(--deep);color:var(--white);padding:14px;position:sticky;top:0;z-index:30;box-shadow:0 2px 8px rgba(22,48,43,.3)}
+.hd-inner{max-width:520px;margin:0 auto}
+.hd-title{font-weight:800;font-size:17px;letter-spacing:.2px}
+.hd-sub{font-size:12px;color:#AFC4BC;margin-top:2px}
+.hd-accent{color:var(--safety)}
+.xe-hero{display:flex;align-items:baseline;gap:10px;margin-top:2px}
+.xe-hero .code{font-size:30px;font-weight:800;letter-spacing:1px;color:var(--safety)}
+.xe-hero .loai{font-size:13px;color:#AFC4BC;font-weight:600}
+
+.tabs{display:flex;background:#0D211D;border-radius:10px;padding:3px;margin-top:12px;gap:2px}
+.tabs button{flex:1;border:0;background:transparent;color:#93A8A0;font-family:inherit;font-weight:700;font-size:12.5px;padding:9px 2px;border-radius:8px;cursor:pointer;white-space:nowrap}
+.tabs button.on{background:var(--safety);color:var(--deep)}
+
+.pane{display:none;padding-top:12px}
+.pane.on{display:block}
+.load{text-align:center;color:var(--muted);padding:26px 0;font-size:14px}
+.warn-note{background:#FFF4E4;border:1px solid var(--safety);border-radius:10px;padding:9px 12px;font-size:12.5px;color:#7A4A08;margin-bottom:10px}
+
+/* Hồ sơ xe */
+.sec-t{font-weight:800;font-size:14px;color:var(--deep-2);margin:14px 0 8px}
+.bd-card{background:var(--white);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px}
+.bd-card .nm{font-size:14px;font-weight:700}
+.bd-card .cyc{font-size:12px;color:var(--muted);margin-top:1px}
+.bd-card .due{margin-top:6px;font-size:13px}
+.bd-card .due b{font-size:15px}
+.bd-card.over{border-color:var(--danger);background:#FDF3F2}
+.bd-card.over .due b{color:var(--danger)}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;border-radius:6px;padding:1px 7px;vertical-align:middle}
+.tag.over{background:#FDE8E6;color:var(--danger)}
+.tag.nobase{background:#EEF1EC;color:var(--muted)}
+.tag.open{background:#FDE8E6;color:var(--danger)}
+.hist-row{background:var(--white);border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:6px;font-size:12.5px}
+.hist-row .top{display:flex;justify-content:space-between;gap:8px;font-weight:600}
+.hist-row .sub{color:var(--muted);margin-top:2px}
+.hist-tag{font-size:11px;font-weight:800;border-radius:6px;padding:1px 7px;margin-right:6px}
+.hist-tag.bh{background:#FDE8E6;color:var(--danger)}
+.hist-tag.sc{background:#E3F2E9;color:var(--ok)}
+.hist-tag.bd{background:#E7EEFB;color:#2B4C8C}
+.hist-tag.n{background:#E3F2E9;color:var(--ok)}
+.hist-tag.d{background:#FFF3DC;color:#8A5A00}
+.hist-row.neg{border-color:var(--danger)}
+
+/* Form chung */
+.fbox{background:var(--white);border:2px solid var(--deep-2);border-radius:14px;overflow:hidden;margin-top:4px}
+.fbox-head{background:var(--deep-2);color:var(--white);padding:10px 14px;font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center}
+.fbox-head .badge{background:var(--safety);color:var(--deep);border-radius:20px;padding:2px 10px;font-size:13px}
+.frow{padding:10px 12px;border-bottom:1px dashed var(--line)}
+.frow:last-child{border-bottom:0}
+.frow label{display:block;font-size:13px;font-weight:700;margin-bottom:5px}
+.frow input[type=text],.frow input[type=number],.frow input[type=date],.frow select,.frow textarea{width:100%;border:1.5px solid var(--line);border-radius:9px;padding:10px 11px;font-family:inherit;font-size:15px;background:var(--white)}
+.frow textarea{min-height:70px;resize:vertical}
+.frow input:focus,.frow select:focus,.frow textarea:focus{outline:none;border-color:var(--safety)}
+.seg2{display:flex;gap:8px}
+.seg2 button{flex:1;border:1.5px solid var(--line);border-radius:10px;background:var(--white);font-family:inherit;font-weight:700;font-size:13.5px;padding:11px 0;cursor:pointer;color:var(--muted)}
+.seg2 button.on{background:var(--deep-2);color:var(--white);border-color:var(--deep-2)}
+.seg2 button.on.bad{background:var(--danger);border-color:var(--danger)}
+.radio-list label{display:flex;gap:9px;align-items:flex-start;background:var(--paper);border:1.5px solid var(--line);border-radius:10px;padding:10px 11px;margin-bottom:7px;font-weight:600;font-size:13.5px;cursor:pointer}
+.radio-list label.on{border-color:var(--safety);background:#FFF7EB}
+.radio-list input{width:19px;height:19px;margin-top:1px;accent-color:var(--safety)}
+.radio-list .cyc{font-size:11.5px;color:var(--muted);font-weight:400}
+.adjust-row{display:flex;gap:9px;align-items:flex-start}
+.adjust-row input[type=checkbox]{width:20px;height:20px;margin-top:1px;accent-color:var(--safety)}
+.adjust-row .lbl{font-size:13px;font-weight:700}
+.adjust-row .sub{font-size:11.5px;color:var(--muted);font-weight:400;margin-top:2px}
+
+/* Tìm vật tư + slip */
+.search-box input{width:100%;border:2px solid var(--line);border-radius:12px;padding:13px 14px;font-family:inherit;font-size:16px;background:var(--white)}
+.search-box input:focus{outline:none;border-color:var(--safety)}
+.hint{font-size:12.5px;color:var(--muted);margin:6px 0}
+.item{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--white);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:7px;cursor:pointer}
+.item:active{background:#FFF7EB}
+.item .nm{font-size:14px;font-weight:500}
+.item .cd{font-size:12px;color:var(--muted);margin-top:2px}
+.item .add{flex-shrink:0;width:36px;height:36px;border-radius:10px;background:var(--deep-2);color:var(--white);border:0;font-size:21px;font-weight:700;cursor:pointer;line-height:1}
+.item.added{border-color:var(--safety);background:#FFF7EB}
+.item.added .add{background:var(--safety);color:var(--deep)}
+.empty-note{color:var(--muted);font-size:14px;text-align:center;padding:14px 0}
+.slip-row{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px dashed var(--line)}
+.slip-row .info{flex:1;min-width:0}
+.slip-row .nm{font-size:13.5px;font-weight:600;overflow-wrap:break-word}
+.slip-row .cd{font-size:11.5px;color:var(--muted)}
+.qty{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.qty button{width:33px;height:33px;border-radius:9px;border:1.5px solid var(--line);background:var(--white);font-size:19px;font-weight:700;cursor:pointer;color:var(--deep-2)}
+.qty input{width:52px;height:33px;text-align:center;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:15px;font-weight:700}
+.slip-row .rm{width:30px;height:30px;border:0;background:transparent;color:var(--danger);font-size:19px;cursor:pointer;flex-shrink:0}
+.slip-empty{padding:14px;text-align:center;color:var(--muted);font-size:13.5px}
+body.adjusting .fbox.slipbox{border-color:var(--danger)}
+body.adjusting .fbox.slipbox .fbox-head{background:var(--danger)}
+
+/* Tồn kho */
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:8px}
+.chips button{border:1.5px solid var(--line);border-radius:20px;background:var(--white);font-family:inherit;font-weight:700;font-size:12.5px;padding:7px 13px;cursor:pointer;color:var(--muted);white-space:nowrap}
+.chips button.on{background:var(--deep-2);color:var(--white);border-color:var(--deep-2)}
+.stock-row{display:flex;justify-content:space-between;align-items:center;background:var(--white);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:6px}
+.stock-row .nm{font-size:13.5px;font-weight:500}
+.stock-row .cd{font-size:11.5px;color:var(--muted)}
+.stock-row .ton{font-size:17px;font-weight:800;color:var(--deep-2);white-space:nowrap;margin-left:10px}
+.stock-row .ton small{font-size:11px;color:var(--muted);font-weight:600}
+.stock-row.zero .ton{color:var(--danger)}
+.stock-row.low{border-color:var(--danger);background:#FDF3F2}
+.stock-row.low .ton{color:var(--danger)}
+.low-tag{display:inline-block;font-size:10.5px;font-weight:800;background:#FDE8E6;color:var(--danger);border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:middle}
+
+/* Bottom bar */
+.bar{position:fixed;bottom:0;left:0;right:0;background:var(--white);border-top:1px solid var(--line);padding:12px 14px calc(12px + env(safe-area-inset-bottom));z-index:40;display:none}
+.bar.show{display:block}
+.bar-inner{max-width:520px;margin:0 auto;display:flex;gap:10px;align-items:center}
+.bar .sum{font-size:13px;color:var(--muted);flex:1}
+.bar .sum b{color:var(--ink);font-size:15px}
+.send{border:0;border-radius:12px;background:var(--safety);color:var(--deep);font-family:inherit;font-weight:800;font-size:16px;padding:14px 22px;cursor:pointer;box-shadow:0 2px 6px rgba(208,115,10,.4)}
+.send:disabled{background:#DDE2DB;color:#9AA69E;box-shadow:none;cursor:default}
+
+/* Overlays */
+.overlay{position:fixed;inset:0;background:rgba(22,48,43,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+.overlay.show{display:flex}
+.card{background:var(--white);border-radius:16px;max-width:420px;width:100%;padding:24px 20px;text-align:center;max-height:88vh;overflow:auto}
+.card .big{font-size:44px;line-height:1;margin-bottom:10px}
+.card h2{font-size:17px;font-weight:800;margin-bottom:8px}
+.card p{font-size:14px;color:var(--muted);margin-bottom:16px}
+.card .summary{background:var(--paper);border-radius:10px;padding:10px 12px;font-size:13px;text-align:left;margin-bottom:16px;max-height:180px;overflow:auto}
+.card button{border:0;border-radius:10px;font-family:inherit;font-weight:700;font-size:15px;padding:12px 20px;cursor:pointer}
+.card .primary{background:var(--deep-2);color:var(--white);width:100%}
+.spinner{width:36px;height:36px;border:4px solid var(--line);border-top-color:var(--safety);border-radius:50%;margin:0 auto 14px;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation:none}}
+.pin-row{margin-bottom:14px}
+.pin-row label{display:block;font-size:13px;font-weight:700;margin-bottom:6px;text-align:left}
+.pin-row input{width:100%;border:2px solid var(--line);border-radius:10px;padding:12px;font-family:inherit;font-size:20px;text-align:center;letter-spacing:6px}
+.pin-row input:focus{outline:none;border-color:var(--safety)}
+.pin-err{color:var(--danger);font-size:12.5px;margin-top:5px;display:none;text-align:left}
+.doc-link{display:block;background:var(--safety);color:var(--deep);font-weight:800;border-radius:10px;padding:12px;margin-bottom:12px;text-decoration:none;font-size:15px}
+.retry{margin-top:8px}
+.retry a{color:var(--muted);font-size:13.5px}
+</style>
+</head>
+<body>
+<header>
+  <div class="hd-inner">
+    <div class="hd-title">KỸ THUẬT VẬT TƯ <span class="hd-accent">ICD PHÚC LONG</span></div>
+    <div class="hd-sub" id="hdSub">Đang tải…</div>
+    <div class="xe-hero" id="xeHero" style="display:none">
+      <span class="code" id="xeCode"></span><span class="loai" id="xeLoai"></span>
+    </div>
+    <div class="tabs" id="tabs"></div>
+  </div>
+</header>
+
+<div class="wrap" id="main"><div class="load">Đang tải dữ liệu…</div></div>
+
+<div class="bar" id="bar">
+  <div class="bar-inner">
+    <div class="sum" id="barSum"><b>0</b> mã vật tư</div>
+    <button class="send" id="btnSend" disabled>Gửi phiếu</button>
+  </div>
+</div>
+
+<div class="overlay" id="ovConfirm">
+  <div class="card">
+    <div class="big">🧾</div>
+    <h2 id="cfTitle"></h2>
+    <div class="summary" id="cfSummary"></div>
+    <div class="pin-row" id="pinRow">
+      <label for="pin">Mã PIN (hỏi Leon nếu chưa có)</label>
+      <input type="password" id="pin" inputmode="numeric" maxlength="8" placeholder="••••••">
+      <div class="pin-err" id="pinErr"></div>
+    </div>
+    <button class="primary" id="btnConfirm">Gửi ngay</button>
+    <p style="margin-top:10px"><a href="#" id="btnCancel" style="color:var(--muted)">Quay lại sửa</a></p>
+  </div>
+</div>
+
+<div class="overlay" id="ovSending">
+  <div class="card"><div class="spinner"></div><h2>Đang gửi…</h2><p>Giữ nguyên màn hình, đừng tắt.</p></div>
+</div>
+
+<div class="overlay" id="ovDone">
+  <div class="card">
+    <div class="big" id="doneIcon">✅</div>
+    <h2 id="doneTitle"></h2>
+    <p id="doneMsg"></p>
+    <div id="docLinkWrap"></div>
+    <button class="primary" id="btnDoneOk">OK</button>
+  </div>
+</div>
+
+<script>
+// ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
+const SCRIPT_URL = "DAN_URL_APPS_SCRIPT_VAO_DAY";
+// ==========================================================
+
+const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const XE = (params.get("xe") || "").toUpperCase().trim();
+const MODE = XE ? "xe" : "kho";
+
+const TO_TRUONG = ["Học (tổ máy XN)","Thông (tổ điện XN)","Ân (tổ máy ĐK)","Dũng (tổ điện ĐK)","Trọng (tổ cơ khí)","Nhi (tổ điện CN)"];
+const NHOM_ORDER = ["MÁY XN","ĐIỆN XN","MÁY ĐK","ĐIỆN ĐK","CƠ KHÍ","ĐIỆN CN"];
+
+const state = { data:null, tab:null, slip:{}, slipKind:null, pending:null };
+
+function stripAccent(s){
+  return String(s).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").replace(/Đ/g,"D").toLowerCase();
+}
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function isoToVN(iso){ const d = iso.split("-"); return d[2]+"/"+d[1]+"/"+d[0]; }
+
+/* ==================== LOAD ==================== */
+async function loadData(){
+  $("main").innerHTML = '<div class="load">Đang tải dữ liệu…</div>';
+  try{
+    const res = await fetch(SCRIPT_URL + "?mode=view");
+    const j = await res.json();
+    if(j.status !== "ok") throw new Error(j.message || "lỗi");
+    state.data = j;
+    j.stock.forEach(r => r.key = stripAccent(r.ten + " " + r.ma));
+    initUI();
+  }catch(err){
+    $("main").innerHTML = '<div class="load">Không tải được dữ liệu — kiểm tra mạng rồi <a href="#" onclick="loadData();return false;">bấm tải lại</a>.</div>';
+  }
+}
+
+function initUI(){
+  const d = state.data;
+  if(MODE === "xe"){
+    const xe = d.xe.find(x => x.ma === XE);
+    if(!xe){
+      $("hdSub").textContent = "Không tìm thấy xe " + XE + " trong danh mục.";
+      $("main").innerHTML = '<div class="load">Mã xe không có trong hệ thống. Kiểm tra lại QR hoặc báo Leon.</div>';
+      return;
+    }
+    $("hdSub").textContent = "Hồ sơ phương tiện";
+    $("xeHero").style.display = "flex";
+    $("xeCode").textContent = xe.ma;
+    $("xeLoai").textContent = xe.loai + (xe.ten ? " · " + xe.ten : "");
+    buildTabs([["hoso","📋 Hồ sơ"],["baohong","🚨 Báo hỏng"],["suachua","🔧 Sửa chữa"],["baoduong","🛠 Bảo dưỡng"]]);
+  }else{
+    $("hdSub").textContent = "Kho vật tư sửa chữa";
+    buildTabs([["ton","📦 Tồn kho"],["nhap","📥 Nhập kho"],["dexuat","🧾 Đề xuất"]]);
+  }
+}
+
+function buildTabs(list){
+  const t = $("tabs");
+  t.innerHTML = "";
+  list.forEach(([id,label],i)=>{
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.className = i===0 ? "on" : "";
+    b.onclick = ()=>{
+      t.querySelectorAll("button").forEach(x=>x.classList.remove("on"));
+      b.classList.add("on");
+      openTab(id);
+    };
+    t.appendChild(b);
+  });
+  openTab(list[0][0]);
+}
+
+function openTab(id){
+  state.tab = id;
+  state.slip = {}; state.slipKind = null;
+  document.body.classList.remove("adjusting");
+  $("bar").classList.remove("show");
+  const fn = { hoso:renderHoSo, baohong:renderBaoHong, suachua:renderSuaChua, baoduong:renderBaoDuong,
+               ton:renderTon, nhap:renderNhap, dexuat:renderDeXuat }[id];
+  fn();
+}
+
+/* ==================== HỒ SƠ XE ==================== */
+function renderHoSo(){
+  const d = state.data;
+  const hm = d.hangmuc.filter(h => h.maXe === XE);
+  const open = d.openBH.filter(o => o.maXe === XE);
+  let html = '<div class="warn-note">⚠️ Số liệu ghi nhận từ phiếu — <b>chưa phải kết quả kiểm định</b>. Hạn theo giờ: so với đồng hồ trên xe.</div>';
+
+  if(open.length){
+    html += '<div class="sec-t">SỰ CỐ ĐANG MỞ <span class="tag open">' + open.length + '</span></div>';
+    open.forEach(o=>{
+      html += '<div class="hist-row neg"><div class="top"><span><span class="hist-tag bh">MỞ</span>' + esc(o.tinhTrang||"") + '</span><b>' + esc(o.maBH) + '</b></div>'
+            + '<div class="sub">Ngày ' + esc(o.ngay) + ' · ' + esc(o.nguoi) + ' · ' + esc(o.moTa) + '</div></div>';
+    });
+  }
+
+  html += '<div class="sec-t">HẠN BẢO DƯỠNG (cập nhật ' + esc(d.updated) + ')</div>';
+  if(!hm.length) html += '<div class="empty-note">Chưa khai báo hạng mục bảo dưỡng cho xe này.</div>';
+  hm.forEach(h=>{
+    let due, over = false;
+    if(h.noBase){
+      due = '<span class="tag nobase">CHƯA CÓ MỐC GỐC</span> — chờ import dữ liệu';
+    }else if(h.loai === "GIO"){
+      due = 'Gần nhất lúc <b>' + h.lastGio + 'h</b>' + (h.lastNgay ? ' (' + esc(h.lastNgay) + ')' : '')
+          + ' → kỳ tới lúc <b>' + h.nextGio + 'h</b> đồng hồ';
+    }else{
+      over = h.overdue;
+      due = 'Gần nhất ' + esc(h.lastNgay) + ' → hạn tới <b>' + esc(h.nextNgay) + '</b> '
+          + (over ? '<span class="tag over">⚠ QUÁ HẠN ' + Math.abs(h.daysLeft) + ' NGÀY</span>'
+                  : '(còn ' + h.daysLeft + ' ngày)');
+    }
+    html += '<div class="bd-card' + (over?' over':'') + '"><div class="nm">' + esc(h.hangMuc) + '</div>'
+          + '<div class="cyc">Chu kỳ: ' + h.chuKy + ' ' + (h.loai==="GIO"?"giờ":(h.loai==="TUAN"?"tuần":"tháng")) + '</div>'
+          + '<div class="due">' + due + '</div></div>';
+  });
+
+  const ev = [];
+  d.history.BAO_HONG.filter(r=>r.maXe===XE).forEach(r=>ev.push({t:"bh", ts:r.ts, top:esc(r.tinhTrang||"Báo hỏng"), val:esc(r.maBH), sub:"Ngày "+esc(r.ngay)+" · "+esc(r.nguoi)+" · "+esc(r.moTa)}));
+  d.history.SUA_CHUA.filter(r=>r.maXe===XE).forEach(r=>ev.push({t:"sc", ts:r.ts, top:esc(r.vt), val:r.sl+" "+esc(r.dvt), sub:"Ngày "+esc(r.ngay)+" · "+esc(r.nguoi)+(r.maBH?" · đóng "+esc(r.maBH):"")+(r.ghichu?" · "+esc(r.ghichu):""), neg:r.sl<0}));
+  d.history.BAO_DUONG.filter(r=>r.maXe===XE).forEach(r=>ev.push({t:"bd", ts:r.ts, top:esc(r.hangMuc), val:(r.soGio!=null? r.soGio+"h":""), sub:"Ngày "+esc(r.ngay)+" · "+esc(r.nguoi)+(r.ghichu?" · "+esc(r.ghichu):"")}));
+  ev.sort((a,b)=> b.ts > a.ts ? 1 : -1);
+
+  html += '<div class="sec-t">LỊCH SỬ XE (' + ev.length + ' gần nhất)</div>';
+  if(!ev.length) html += '<div class="empty-note">Chưa có ghi nhận nào.</div>';
+  ev.slice(0,40).forEach(e=>{
+    const tag = e.t==="bh" ? '<span class="hist-tag bh">BÁO HỎNG</span>' : (e.t==="sc" ? '<span class="hist-tag sc">SỬA CHỮA</span>' : '<span class="hist-tag bd">BẢO DƯỠNG</span>');
+    html += '<div class="hist-row'+(e.neg?' neg':'')+'"><div class="top"><span>'+tag+e.top+'</span><b>'+e.val+'</b></div><div class="sub">'+e.sub+'</div></div>';
+  });
+
+  $("main").innerHTML = html;
+}
+
+/* ==================== BÁO HỎNG (KHÔNG PIN) ==================== */
+function renderBaoHong(){
+  const tx = state.data.taixe;
+  let opts = '<option value="">— Chọn tên —</option>' + tx.map(t=>'<option>'+esc(t)+'</option>').join("") + '<option value="__khac">Khác (gõ tên)</option>';
+  $("main").innerHTML =
+    '<div class="warn-note">📣 Báo hỏng ở đây là <b>ghi nhật ký</b> — xe hư vẫn báo group / gọi điện như thường lệ để anh em xử lý ngay.</div>'
+   +'<div class="fbox"><div class="fbox-head"><span>BÁO HỎNG — ' + esc(XE) + '</span></div>'
+   +'<div class="frow"><label>Người báo</label><select id="bhNguoi">'+opts+'</select>'
+   +'<input type="text" id="bhNguoiKhac" placeholder="Gõ tên người báo" style="display:none;margin-top:7px"></div>'
+   +'<div class="frow"><label>Tình trạng xe</label><div class="seg2">'
+   +'<button id="bhTT1" class="on">Còn chạy được</button><button id="bhTT2">Chết máy / nằm bãi</button></div></div>'
+   +'<div class="frow"><label>Mô tả hư hỏng</label><textarea id="bhMoTa" placeholder="Vd: kèn không kêu, rỉ nhớt thủy lực, bể đèn sau…"></textarea></div>'
+   +'<div class="frow"><label>Ngày</label><input type="date" id="bhNgay" value="'+todayISO()+'"></div>'
+   +'</div>';
+  $("bhNguoi").onchange = ()=>{ $("bhNguoiKhac").style.display = $("bhNguoi").value==="__khac" ? "block" : "none"; };
+  let tt = "Còn chạy được";
+  $("bhTT1").onclick = ()=>{ tt="Còn chạy được"; $("bhTT1").className="on"; $("bhTT2").className=""; };
+  $("bhTT2").onclick = ()=>{ tt="Chết máy / nằm bãi"; $("bhTT2").className="on bad"; $("bhTT1").className=""; };
+
+  $("bar").classList.add("show");
+  $("barSum").innerHTML = "Báo hỏng xe <b>"+esc(XE)+"</b>";
+  const btn = $("btnSend");
+  btn.disabled = false; btn.textContent = "Gửi báo hỏng";
+  btn.onclick = ()=>{
+    let nguoi = $("bhNguoi").value === "__khac" ? $("bhNguoiKhac").value.trim() : $("bhNguoi").value;
+    const moTa = $("bhMoTa").value.trim();
+    if(!nguoi){ alert("Chọn hoặc gõ tên người báo."); return; }
+    if(!moTa){ alert("Gõ mô tả hư hỏng."); return; }
+    openConfirm({
+      title: "Xác nhận BÁO HỎNG — " + XE,
+      summary: "• Người báo: <b>"+esc(nguoi)+"</b><br>• Tình trạng: <b>"+esc(tt)+"</b><br>• "+esc(moTa),
+      needPin: null,
+      payload: { type:"BAO_HONG", maXe:XE, nguoi:nguoi, tinhTrang:tt, moTa:moTa, date:isoToVN($("bhNgay").value) },
+      doneMsg: j => "Đã ghi nhật ký báo hỏng "+(j.maBH?("("+j.maBH+")"):"")+". Nhớ báo group nếu chưa báo.",
+      after: ()=>openTab("hoso")
+    });
+  };
+}
+
+/* ==================== SLIP VẬT TƯ dùng chung ==================== */
+function slipSearchHTML(idPrefix){
+  return '<div class="search-box"><input type="search" id="'+idPrefix+'Q" placeholder="Gõ tên vật tư… (không dấu cũng được)" autocomplete="off"></div>'
+       + '<div class="hint">Bấm vào vật tư để thêm vào phiếu.</div><div id="'+idPrefix+'Res"></div>';
+}
+function bindSlipSearch(idPrefix){
+  $(idPrefix+"Q").addEventListener("input", ()=>renderSlipSearch(idPrefix));
+}
+function renderSlipSearch(idPrefix){
+  const q = stripAccent($(idPrefix+"Q").value.trim());
+  const box = $(idPrefix+"Res");
+  box.innerHTML = "";
+  if(!q) return;
+  const hits = state.data.stock.filter(it=>it.key.includes(q)).slice(0,20);
+  if(!hits.length){ box.innerHTML = '<div class="empty-note">Không tìm thấy — thử gõ ngắn hơn. Danh mục vật tư chưa import thì báo Leon.</div>'; return; }
+  hits.forEach(it=>{
+    const added = !!state.slip[it.ma];
+    const div = document.createElement("div");
+    div.className = "item"+(added?" added":"");
+    div.innerHTML = '<div><div class="nm">'+esc(it.ten)+'</div><div class="cd">'+esc(it.ma)+' · '+esc(it.dvt)+' · Tồn '+it.ton+'</div></div><button class="add">'+(added?"✓":"+")+'</button>';
+    div.onclick = ()=>{
+      if(!state.slip[it.ma]) state.slip[it.ma] = {ma:it.ma,ten:it.ten,dvt:it.dvt,qty:1};
+      renderSlipRows(); renderSlipSearch(idPrefix);
+    };
+    box.appendChild(div);
+  });
+}
+function slipBoxHTML(title){
+  return '<div class="fbox slipbox"><div class="fbox-head"><span id="slipTitle">'+title+'</span><span class="badge" id="slipCount">0 mã</span></div><div id="slipRows"><div class="slip-empty">Chưa có vật tư nào. Tìm và bấm chọn ở trên.</div></div>';
+}
+function setQty(ma, v){
+  v = parseInt(v,10);
+  const adj = $("adjChk") && $("adjChk").checked;
+  if(isNaN(v)) v = 1;
+  if(v === 0) v = adj ? -1 : 1;
+  if(!adj && v < 1) v = 1;
+  if(v > 9999) v = 9999; if(v < -9999) v = -9999;
+  state.slip[ma].qty = v; renderSlipRows();
+}
+function renderSlipRows(){
+  const rows = $("slipRows"); if(!rows) return;
+  const list = Object.values(state.slip);
+  $("slipCount").textContent = list.length + " mã";
+  $("barSum").innerHTML = "<b>"+list.length+"</b> mã vật tư";
+  $("btnSend").disabled = list.length === 0;
+  if(!list.length){ rows.innerHTML = '<div class="slip-empty">Chưa có vật tư nào. Tìm và bấm chọn ở trên.</div>'; return; }
+  rows.innerHTML = "";
+  list.forEach(r=>{
+    const d = document.createElement("div");
+    d.className = "slip-row";
+    d.innerHTML = '<div class="info"><div class="nm">'+esc(r.ten)+'</div><div class="cd">'+esc(r.ma)+' · '+esc(r.dvt)+'</div></div>'
+      +'<div class="qty"><button aria-label="Giảm">−</button><input type="number" inputmode="numeric" value="'+r.qty+'"><button aria-label="Tăng">+</button></div>'
+      +'<button class="rm" aria-label="Xóa">✕</button>';
+    const [minus, plus] = d.querySelectorAll(".qty button");
+    minus.onclick = ()=>setQty(r.ma, r.qty-1);
+    plus.onclick = ()=>setQty(r.ma, r.qty+1);
+    d.querySelector(".qty input").onchange = e=>setQty(r.ma, e.target.value);
+    d.querySelector(".rm").onclick = ()=>{ delete state.slip[r.ma]; renderSlipRows(); };
+    rows.appendChild(d);
+  });
+}
+function adjustRowHTML(){
+  return '<div class="frow adjust-row"><input type="checkbox" id="adjChk"><div><div class="lbl">Phiếu điều chỉnh (sửa phiếu gửi nhầm)</div><div class="sub">Cho số lượng ÂM để trừ ngược phiếu sai. Bắt buộc ghi chú lý do.</div></div></div>';
+}
+function bindAdjust(){
+  $("adjChk").onchange = ()=>document.body.classList.toggle("adjusting", $("adjChk").checked);
+}
+
+/* ==================== SỬA CHỮA (PIN_VAN) ==================== */
+function renderSuaChua(){
+  const open = state.data.openBH.filter(o=>o.maXe===XE);
+  let bhOpts = '<option value="">Không tham chiếu</option>' + open.map(o=>'<option value="'+esc(o.maBH)+'">'+esc(o.maBH)+' — '+esc(o.moTa).slice(0,40)+'</option>').join("");
+  $("main").innerHTML =
+    slipSearchHTML("sc")
+   + slipBoxHTML("PHIẾU SỬA CHỮA — " + esc(XE))
+   +'<div class="frow"><label>Sự cố tham chiếu (nếu sửa theo báo hỏng)</label><select id="scBH">'+bhOpts+'</select></div>'
+   +'<div class="frow"><label>Người sửa / người ghi</label><input type="text" id="scNguoi" placeholder="Vd: Vân, Học, Ân…"></div>'
+   +'<div class="frow"><label>Ngày</label><input type="date" id="scNgay" value="'+todayISO()+'"></div>'
+   +'<div class="frow"><label>Ghi chú</label><input type="text" id="scNote" placeholder="Vd: mượn cho xe khác, thay cho NB05…"></div>'
+   + adjustRowHTML()
+   +'</div>';
+  bindSlipSearch("sc"); bindAdjust();
+  $("bar").classList.add("show");
+  const btn = $("btnSend");
+  btn.textContent = "Gửi phiếu"; btn.disabled = true;
+  renderSlipRows();
+  btn.onclick = ()=>{
+    const list = Object.values(state.slip);
+    if(!list.length) return;
+    if(!$("scNguoi").value.trim()){ alert("Ghi tên người sửa."); return; }
+    if($("adjChk").checked && !$("scNote").value.trim()){ alert("Phiếu điều chỉnh bắt buộc ghi chú lý do."); return; }
+    openConfirm({
+      title: "Xác nhận PHIẾU "+($("adjChk").checked?"ĐIỀU CHỈNH ":"")+"SỬA CHỮA — "+XE,
+      summary: list.map(r=>"• "+esc(r.ten)+" — <b>"+r.qty+" "+esc(r.dvt)+"</b>").join("<br>")
+             + ($("scBH").value ? "<br>Đóng sự cố: <b>"+esc($("scBH").value)+"</b>" : ""),
+      needPin: "VAN",
+      payload: { type:"SUA_CHUA", maXe:XE, nguoi:$("scNguoi").value.trim(), maBH:$("scBH").value,
+                 note:$("scNote").value.trim(), date:isoToVN($("scNgay").value),
+                 items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})) },
+      doneMsg: ()=> "Đã ghi "+list.length+" mã vật tư vào sổ sửa chữa "+XE+". Tồn kho đã trừ tương ứng.",
+      after: ()=>{ loadData(); }
+    });
+  };
+}
+
+/* ==================== BẢO DƯỠNG (PIN_BINH) ==================== */
+function renderBaoDuong(){
+  const hm = state.data.hangmuc.filter(h=>h.maXe===XE);
+  let radios = hm.map((h,i)=>{
+    const cyc = h.chuKy + " " + (h.loai==="GIO"?"giờ":(h.loai==="TUAN"?"tuần":"tháng"));
+    return '<label id="hmL'+i+'"><input type="radio" name="hm" value="'+i+'"><span>'+esc(h.hangMuc)+'<div class="cyc">Chu kỳ '+cyc+'</div></span></label>';
+  }).join("");
+  if(!hm.length) radios = '<div class="empty-note">Xe này chưa khai báo hạng mục.</div>';
+  $("main").innerHTML =
+    '<div class="fbox"><div class="fbox-head"><span>GHI BẢO DƯỠNG — '+esc(XE)+'</span></div>'
+   +'<div class="frow"><label>Hạng mục vừa làm</label><div class="radio-list" id="hmList">'+radios+'</div></div>'
+   +'<div class="frow" id="gioRow" style="display:none"><label>Số giờ trên đồng hồ xe lúc bảo dưỡng</label><input type="number" id="bdGio" inputmode="numeric" placeholder="Vd: 12340"></div>'
+   +'<div class="frow"><label>Ngày</label><input type="date" id="bdNgay" value="'+todayISO()+'"></div>'
+   +'<div class="frow"><label>Người ghi</label><input type="text" id="bdNguoi" value="Bình"></div>'
+   +'<div class="frow"><label>Ghi chú</label><input type="text" id="bdNote" placeholder="(không bắt buộc)"></div>'
+   +'</div>';
+  let sel = null;
+  document.querySelectorAll('#hmList input[name=hm]').forEach(r=>{
+    r.onchange = ()=>{
+      sel = hm[+r.value];
+      document.querySelectorAll('#hmList label').forEach(l=>l.classList.remove("on"));
+      r.closest("label").classList.add("on");
+      $("gioRow").style.display = sel.loai==="GIO" ? "block" : "none";
+    };
+  });
+  $("bar").classList.add("show");
+  $("barSum").innerHTML = "Bảo dưỡng xe <b>"+esc(XE)+"</b>";
+  const btn = $("btnSend");
+  btn.disabled = !hm.length; btn.textContent = "Ghi bảo dưỡng";
+  btn.onclick = ()=>{
+    if(!sel){ alert("Chọn hạng mục vừa làm."); return; }
+    const gio = $("bdGio").value.trim();
+    if(sel.loai==="GIO" && !gio){ alert("Hạng mục theo giờ — bắt buộc nhập số giờ đồng hồ. Không có số này hệ không tính được kỳ tới."); return; }
+    if(!$("bdNguoi").value.trim()){ alert("Ghi tên người ghi."); return; }
+    openConfirm({
+      title: "Xác nhận BẢO DƯỠNG — "+XE,
+      summary: "• Hạng mục: <b>"+esc(sel.hangMuc)+"</b>"+(sel.loai==="GIO"?"<br>• Đồng hồ: <b>"+esc(gio)+"h</b> → kỳ tới lúc <b>"+(Number(gio)+sel.chuKy)+"h</b>":"")+"<br>• Ngày: "+isoToVN($("bdNgay").value),
+      needPin: "BINH",
+      payload: { type:"BAO_DUONG", maXe:XE, hangMuc:sel.hangMuc, soGio:(sel.loai==="GIO"?Number(gio):""),
+                 nguoi:$("bdNguoi").value.trim(), note:$("bdNote").value.trim(), date:isoToVN($("bdNgay").value) },
+      doneMsg: ()=> "Đã ghi bảo dưỡng \""+sel.hangMuc+"\" cho "+XE+". Hạn kỳ tới đã cập nhật.",
+      after: ()=>{ loadData(); }
+    });
+  };
+}
+
+/* ==================== TỒN KHO ==================== */
+let tonNhom = "ALL";
+function renderTon(){
+  const d = state.data;
+  const nhoms = NHOM_ORDER.filter(n => d.stock.some(s=>s.nhom===n));
+  d.stock.forEach(s=>{ if(s.nhom && !nhoms.includes(s.nhom) && !NHOM_ORDER.includes(s.nhom)) nhoms.push(s.nhom); });
+  let chips = '<button data-n="ALL" class="'+(tonNhom==="ALL"?"on":"")+'">Tất cả</button>'
+            + nhoms.map(n=>'<button data-n="'+esc(n)+'" class="'+(tonNhom===n?"on":"")+'">'+esc(n)+'</button>').join("");
+  $("main").innerHTML =
+    '<div class="warn-note">⚠️ Số liệu ghi nhận từ phiếu — <b>chưa phải kết quả kiểm kê</b>. Số chính thức theo đối chiếu với sổ và đếm thực tế.</div>'
+   +'<div class="search-box"><input type="search" id="tonQ" placeholder="Tìm vật tư… (không dấu cũng được)" autocomplete="off"></div>'
+   +'<div class="chips" id="tonChips">'+chips+'</div>'
+   +'<div class="hint">Cập nhật '+esc(d.updated)+'</div><div id="tonList"></div>';
+  $("tonQ").addEventListener("input", renderTonList);
+  document.querySelectorAll("#tonChips button").forEach(b=>{
+    b.onclick = ()=>{
+      tonNhom = b.dataset.n;
+      document.querySelectorAll("#tonChips button").forEach(x=>x.classList.toggle("on", x===b));
+      renderTonList();
+    };
+  });
+  renderTonList();
+}
+function renderTonList(){
+  const q = stripAccent($("tonQ").value.trim());
+  let rows = state.data.stock.filter(r => (tonNhom==="ALL" || r.nhom===tonNhom) && (!q || r.key.includes(q)));
+  const box = $("tonList"); box.innerHTML = "";
+  if(!state.data.stock.length){ box.innerHTML = '<div class="empty-note">Danh mục vật tư chưa import — chờ file của Vân.</div>'; return; }
+  if(!rows.length){ box.innerHTML = '<div class="empty-note">Không có vật tư khớp.</div>'; return; }
+  rows.forEach(r=>{
+    const low = r.min > 0 && r.ton <= r.min;
+    const div = document.createElement("div");
+    div.className = "stock-row"+(r.ton<=0?" zero":"")+(low?" low":"");
+    div.innerHTML = '<div><div class="nm">'+esc(r.ten)+(low?'<span class="low-tag">⚠ DƯỚI NGƯỠNG</span>':'')+'</div>'
+      +'<div class="cd">'+esc(r.ma)+(r.macu?' ('+esc(r.macu)+')':'')+' · '+esc(r.nhom)+' · Nhập '+r.nhap+' · Xuất '+r.xuat+(r.min>0?' · Min '+r.min:'')+'</div></div>'
+      +'<div class="ton">'+r.ton+' <small>'+esc(r.dvt)+'</small></div>';
+    box.appendChild(div);
+  });
+}
+
+/* ==================== NHẬP KHO (PIN_VAN) ==================== */
+function renderNhap(){
+  $("main").innerHTML =
+    slipSearchHTML("nh")
+   + slipBoxHTML("PHIẾU NHẬP KHO")
+   +'<div class="frow"><label>Người gửi</label><input type="text" id="nhNguoi" value="Vân"></div>'
+   +'<div class="frow"><label>Ngày</label><input type="date" id="nhNgay" value="'+todayISO()+'"></div>'
+   +'<div class="frow"><label>Ghi chú</label><input type="text" id="nhNote" placeholder="(không bắt buộc)"></div>'
+   + adjustRowHTML()
+   +'</div>';
+  bindSlipSearch("nh"); bindAdjust();
+  $("bar").classList.add("show");
+  const btn = $("btnSend");
+  btn.textContent = "Gửi phiếu"; btn.disabled = true;
+  renderSlipRows();
+  btn.onclick = ()=>{
+    const list = Object.values(state.slip);
+    if(!list.length) return;
+    if(!$("nhNguoi").value.trim()){ alert("Ghi tên người gửi."); return; }
+    if($("adjChk").checked && !$("nhNote").value.trim()){ alert("Phiếu điều chỉnh bắt buộc ghi chú lý do."); return; }
+    openConfirm({
+      title: "Xác nhận PHIẾU "+($("adjChk").checked?"ĐIỀU CHỈNH ":"")+"NHẬP KHO",
+      summary: list.map(r=>"• "+esc(r.ten)+" — <b>"+r.qty+" "+esc(r.dvt)+"</b>").join("<br>"),
+      needPin: "VAN",
+      payload: { type:"NHAP", nguoi:$("nhNguoi").value.trim(), note:$("nhNote").value.trim(),
+                 date:isoToVN($("nhNgay").value), items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})) },
+      doneMsg: ()=> "Đã ghi "+list.length+" mã vào sổ nhập kho.",
+      after: ()=>{ loadData(); }
+    });
+  };
+}
+
+/* ==================== ĐỀ XUẤT (PIN_DEXUAT) ==================== */
+function renderDeXuat(){
+  let opts = '<option value="">— Chọn người đề xuất —</option>' + TO_TRUONG.map(t=>'<option>'+esc(t)+'</option>').join("") + '<option value="__khac">Khác (gõ tên)</option>';
+  $("main").innerHTML =
+    slipSearchHTML("dx")
+   + slipBoxHTML("PHIẾU ĐỀ XUẤT VẬT TƯ")
+   +'<div class="frow"><label>Người đề xuất</label><select id="dxNguoi">'+opts+'</select>'
+   +'<input type="text" id="dxNguoiKhac" placeholder="Gõ tên" style="display:none;margin-top:7px"></div>'
+   +'<div class="frow"><label>V/v — lý do đề xuất (nên ghi rõ)</label><input type="text" id="dxNote" placeholder="Vd: bổ sung vật tư sửa NB05"></div>'
+   +'<div class="frow"><label>Ngày</label><input type="date" id="dxNgay" value="'+todayISO()+'"></div>'
+   +'<div class="frow"><div class="hint" style="margin:0">Đề xuất là xin cấp — <b>không cộng vào tồn kho</b>. Phiếu in vẫn ký duyệt giấy như quy trình.</div></div>'
+   +'</div>';
+  bindSlipSearch("dx");
+  $("dxNguoi").onchange = ()=>{ $("dxNguoiKhac").style.display = $("dxNguoi").value==="__khac" ? "block" : "none"; };
+  $("bar").classList.add("show");
+  const btn = $("btnSend");
+  btn.textContent = "Gửi đề xuất"; btn.disabled = true;
+  renderSlipRows();
+  btn.onclick = ()=>{
+    const list = Object.values(state.slip);
+    if(!list.length) return;
+    let nguoi = $("dxNguoi").value === "__khac" ? $("dxNguoiKhac").value.trim() : $("dxNguoi").value;
+    if(!nguoi){ alert("Chọn người đề xuất."); return; }
+    openConfirm({
+      title: "Xác nhận PHIẾU ĐỀ XUẤT",
+      summary: "Người đề xuất: <b>"+esc(nguoi)+"</b><br>" + list.map(r=>"• "+esc(r.ten)+" — <b>"+r.qty+" "+esc(r.dvt)+"</b>").join("<br>"),
+      needPin: "DX",
+      payload: { type:"DE_XUAT", nguoi:nguoi, note:$("dxNote").value.trim(), date:isoToVN($("dxNgay").value),
+                 items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})) },
+      doneMsg: j => "Đã ghi đề xuất vào sổ và gửi email." + (j.warn ? " " + j.warn : ""),
+      after: ()=>{ loadData(); }
+    });
+  };
+}
+
+/* ==================== CONFIRM + GỬI ==================== */
+function pinKey(k){ return "ktvt_pin_" + k; }
+function openConfirm(cfg){
+  state.pending = cfg;
+  $("cfTitle").textContent = cfg.title;
+  $("cfSummary").innerHTML = cfg.summary;
+  $("pinErr").style.display = "none";
+  if(cfg.needPin){
+    $("pinRow").style.display = "block";
+    try{ $("pin").value = localStorage.getItem(pinKey(cfg.needPin)) || ""; }catch(_){ $("pin").value=""; }
+  }else{
+    $("pinRow").style.display = "none";
+  }
+  $("ovConfirm").classList.add("show");
+}
+$("btnCancel").onclick = e=>{ e.preventDefault(); $("ovConfirm").classList.remove("show"); };
+
+$("btnConfirm").onclick = async ()=>{
+  const cfg = state.pending; if(!cfg) return;
+  const payload = Object.assign({}, cfg.payload);
+  if(cfg.needPin){
+    const pinVal = $("pin").value.trim();
+    if(!pinVal){ $("pinErr").textContent = "Nhập mã PIN trước khi gửi."; $("pinErr").style.display = "block"; return; }
+    payload.pin = pinVal;
+  }
+  $("ovConfirm").classList.remove("show");
+  $("ovSending").classList.add("show");
+  try{
+    const res = await fetch(SCRIPT_URL, { method:"POST", body: JSON.stringify(payload) });
+    let j = null, ok = res.ok, wrongPin = false;
+    try{ j = await res.json(); ok = j.status === "ok"; wrongPin = j.status === "wrong_pin"; }catch(_){ }
+    $("ovSending").classList.remove("show");
+    if(wrongPin){
+      try{ localStorage.removeItem(pinKey(cfg.needPin)); }catch(_){ }
+      $("pin").value = "";
+      $("pinErr").textContent = "Mã PIN không đúng — nhập lại.";
+      $("pinErr").style.display = "block";
+      $("ovConfirm").classList.add("show");
+      return;
+    }
+    if(ok){
+      if(cfg.needPin){ try{ localStorage.setItem(pinKey(cfg.needPin), payload.pin); }catch(_){ } }
+      $("doneIcon").textContent = "✅";
+      $("doneTitle").textContent = "Đã gửi thành công";
+      $("doneMsg").textContent = cfg.doneMsg(j || {});
+      $("docLinkWrap").innerHTML = (j && j.docUrl) ? '<a href="'+j.docUrl+'" target="_blank" class="doc-link">🖨 Mở phiếu đề xuất để in</a>' : "";
+      $("btnDoneOk").onclick = ()=>{ $("ovDone").classList.remove("show"); if(cfg.after) cfg.after(); };
+    }else{
+      showFail(j);
+    }
+    $("ovDone").classList.add("show");
+  }catch(err){
+    $("ovSending").classList.remove("show");
+    showFail(null);
+    $("ovDone").classList.add("show");
+  }
+};
+function showFail(j){
+  $("docLinkWrap").innerHTML = "";
+  $("doneIcon").textContent = "⚠️";
+  $("doneTitle").textContent = "Gửi chưa thành công";
+  $("doneMsg").textContent = (j && j.message ? j.message + " — " : "") + "Kiểm tra mạng rồi bấm gửi lại. Nếu vẫn lỗi: ghi tạm sổ giấy và báo Leon.";
+  $("btnDoneOk").onclick = ()=>{ $("ovDone").classList.remove("show"); };
+}
+
+loadData();
+</script>
+</body>
+</html>
