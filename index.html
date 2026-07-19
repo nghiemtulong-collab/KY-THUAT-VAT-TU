@@ -230,7 +230,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.19-RC2";
+const APP_VERSION = "2026.07.19-RC2.1";
 // ==========================================================
 
 const $ = id => document.getElementById(id);
@@ -652,6 +652,10 @@ function renderBaoDuong(){
     const gio = $("bdGio").value.trim();
     if(sel.loai==="GIO" && !gio){ alert("Hạng mục theo giờ — bắt buộc nhập số giờ đồng hồ. Không có số này hệ không tính được kỳ tới."); return; }
     if(sel.loai==="GIO" && (!Number.isInteger(Number(gio)) || Number(gio)<0)){ alert("Số giờ đồng hồ phải là số nguyên không âm."); return; }
+    if(sel.loai==="GIO" && sel.lastGio!=null && Number.isFinite(Number(sel.lastGio)) && Number(gio)<Number(sel.lastGio)){
+      alert("Số giờ "+gio+" NHỎ HƠN mốc gần nhất đã ghi ("+sel.lastGio+"h) của hạng mục này. Kiểm tra lại đồng hồ; nếu mốc cũ ghi nhầm quá cao, báo Leon sửa trong Sheet.");
+      return;
+    }
     if(!$("bdNguoi").value.trim()){ alert("Ghi tên người ghi."); return; }
     const ngay = requireDateVN("bdNgay"); if(!ngay) return;
     openConfirm({
