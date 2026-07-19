@@ -205,7 +205,7 @@ body.adjusting .fbox.slipbox .fbox-head{background:var(--danger)}
 
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
+const SCRIPT_URL = "DAN_URL_APPS_SCRIPT_VAO_DAY";
 // ==========================================================
 
 const $ = id => document.getElementById(id);
@@ -256,7 +256,7 @@ function initUI(){
     buildTabs([["hoso","📋 Hồ sơ"],["baohong","🚨 Báo hỏng"],["suachua","🔧 Sửa chữa"],["baoduong","🛠 Bảo dưỡng"]]);
   }else{
     $("hdSub").textContent = "Kho vật tư sửa chữa";
-    buildTabs([["ton","📦 Tồn kho"],["nhap","📥 Nhập kho"],["dexuat","🧾 Đề xuất"]]);
+    buildTabs([["ton","📦 Tồn"],["xuat","📤 Xuất"],["nhap","📥 Nhập"],["dexuat","🧾 Đề xuất"],["lichsu","🕘 Lịch sử"]]);
   }
 }
 
@@ -283,7 +283,7 @@ function openTab(id){
   document.body.classList.remove("adjusting");
   $("bar").classList.remove("show");
   const fn = { hoso:renderHoSo, baohong:renderBaoHong, suachua:renderSuaChua, baoduong:renderBaoDuong,
-               ton:renderTon, nhap:renderNhap, dexuat:renderDeXuat }[id];
+               ton:renderTon, xuat:renderXuat, nhap:renderNhap, dexuat:renderDeXuat, lichsu:renderLichSu }[id];
   fn();
 }
 
@@ -474,6 +474,7 @@ function renderSuaChua(){
              + ($("scBH").value ? "<br>Đóng sự cố: <b>"+esc($("scBH").value)+"</b>" : ""),
       needPin: "VAN",
       payload: { type:"SUA_CHUA", maXe:XE, nguoi:$("scNguoi").value.trim(), maBH:$("scBH").value,
+                 hangMuc:(state.data.xe.find(x=>x.ma===XE)||{}).loai||"", nguoiNhan:$("scNguoi").value.trim(),
                  note:$("scNote").value.trim(), date:isoToVN($("scNgay").value),
                  items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})) },
       doneMsg: ()=> "Đã ghi "+list.length+" mã vật tư vào sổ sửa chữa "+XE+". Tồn kho đã trừ tương ứng.",
@@ -564,6 +565,105 @@ function renderTonList(){
     div.innerHTML = '<div><div class="nm">'+esc(r.ten)+(low?'<span class="low-tag">⚠ DƯỚI NGƯỠNG</span>':'')+'</div>'
       +'<div class="cd">'+esc(r.ma)+(r.macu?' ('+esc(r.macu)+')':'')+' · '+esc(r.nhom)+' · Nhập '+r.nhap+' · Xuất '+r.xuat+(r.min>0?' · Min '+r.min:'')+'</div></div>'
       +'<div class="ton">'+r.ton+' <small>'+esc(r.dvt)+'</small></div>';
+    box.appendChild(div);
+  });
+}
+
+/* ==================== XUẤT KHO (PIN_VAN) — ghi chung sổ SUA_CHUA_RESP ==================== */
+const HANG_MUC_XUAT = ["XE NÂNG HÀNG","XE NÂNG RỖNG","ĐẦU KÉO","CẨU KHUNG","CẨU SUMITOMO","KHÁC"];
+function renderXuat(){
+  const dl = '<datalist id="dlNhan">' + TO_TRUONG.map(t=>'<option value="'+esc(t.split(" (")[0])+'">').join("") + '</datalist>';
+  const hmOpts = '<option value="">— Chọn hạng mục —</option>' + HANG_MUC_XUAT.map(h=>'<option>'+esc(h)+'</option>').join("");
+  $("main").innerHTML =
+    slipSearchHTML("xk")
+   + slipBoxHTML("PHIẾU XUẤT KHO")
+   +'<div class="frow"><label>Người nhận (thợ lên lãnh)</label><input type="text" id="xkNhan" list="dlNhan" placeholder="Vd: Học, Ân, Trọng…">'+dl+'</div>'
+   +'<div class="frow"><label>Hạng mục xuất</label><select id="xkHM">'+hmOpts+'</select></div>'
+   +'<div class="frow"><label>Cho xe (nếu biết — không bắt buộc)</label><select id="xkXe"><option value="">— Không gắn xe cụ thể —</option></select></div>'
+   +'<div class="frow"><label>Lý do xuất</label><input type="text" id="xkNote" placeholder="Vd: thay đèn sau NB05, bảo dưỡng định kỳ…"></div>'
+   +'<div class="frow"><label>Người gửi</label><input type="text" id="xkNguoi" value="Vân"></div>'
+   +'<div class="frow"><label>Ngày</label><input type="date" id="xkNgay" value="'+todayISO()+'"></div>'
+   + adjustRowHTML()
+   +'</div>';
+  bindSlipSearch("xk"); bindAdjust();
+  function fillXe(){
+    const hm = $("xkHM").value;
+    const map = {"XE NÂNG HÀNG":"XE NÂNG HÀNG","XE NÂNG RỖNG":"XE NÂNG RỖNG","ĐẦU KÉO":"ĐẦU KÉO","CẨU KHUNG":"CẨU KHUNG","CẨU SUMITOMO":"CẨU SUMITOMO"};
+    const list = state.data.xe.filter(x => !map[hm] || x.loai === map[hm]);
+    $("xkXe").innerHTML = '<option value="">— Không gắn xe cụ thể —</option>' + list.map(x=>'<option>'+esc(x.ma)+'</option>').join("");
+  }
+  fillXe();
+  $("xkHM").onchange = fillXe;
+  $("bar").classList.add("show");
+  const btn = $("btnSend");
+  btn.textContent = "Gửi phiếu"; btn.disabled = true;
+  renderSlipRows();
+  btn.onclick = ()=>{
+    const list = Object.values(state.slip);
+    if(!list.length) return;
+    if(!$("xkNhan").value.trim()){ alert("Ghi tên người nhận."); return; }
+    if(!$("xkHM").value){ alert("Chọn hạng mục xuất."); return; }
+    if(!$("xkNote").value.trim()){ alert("Ghi lý do xuất."); return; }
+    if($("adjChk").checked && !$("xkNote").value.trim()){ alert("Phiếu điều chỉnh bắt buộc ghi chú lý do."); return; }
+    openConfirm({
+      title: "Xác nhận PHIẾU "+($("adjChk").checked?"ĐIỀU CHỈNH ":"")+"XUẤT KHO",
+      summary: list.map(r=>"• "+esc(r.ten)+" — <b>"+r.qty+" "+esc(r.dvt)+"</b>").join("<br>")
+             + "<br>Người nhận: <b>"+esc($("xkNhan").value.trim())+"</b> · "+esc($("xkHM").value)
+             + ($("xkXe").value ? " · xe <b>"+esc($("xkXe").value)+"</b>" : ""),
+      needPin: "VAN",
+      payload: { type:"XUAT", maXe:$("xkXe").value, hangMuc:$("xkHM").value, nguoiNhan:$("xkNhan").value.trim(),
+                 nguoi:$("xkNguoi").value.trim(), note:$("xkNote").value.trim(), date:isoToVN($("xkNgay").value),
+                 items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})) },
+      doneMsg: ()=> "Đã ghi "+list.length+" mã vào sổ xuất kho. Tồn đã trừ tương ứng.",
+      after: ()=>{ loadData(); }
+    });
+  };
+}
+
+/* ==================== LỊCH SỬ KHO ==================== */
+let lsType = "all";
+function renderLichSu(){
+  $("main").innerHTML =
+    '<div class="warn-note">⚠️ Số liệu ghi nhận từ phiếu — <b>chưa phải kết quả kiểm kê</b>.</div>'
+   +'<div class="chips" id="lsChips">'
+   +'<button data-t="all" class="'+(lsType==="all"?"on":"")+'">Tất cả</button>'
+   +'<button data-t="x" class="'+(lsType==="x"?"on":"")+'">Xuất</button>'
+   +'<button data-t="n" class="'+(lsType==="n"?"on":"")+'">Nhập</button>'
+   +'<button data-t="d" class="'+(lsType==="d"?"on":"")+'">Đề xuất</button></div>'
+   +'<div class="search-box" style="display:flex;gap:8px"><input type="date" id="lsDate" style="flex:1">'
+   +'<button id="lsDateAll" class="send" style="padding:10px 14px;font-size:13px">Mọi ngày</button></div>'
+   +'<div class="hint">Không lọc ngày: hiện 30 dòng gần nhất.</div><div id="lsList"></div>';
+  document.querySelectorAll("#lsChips button").forEach(b=>{
+    b.onclick = ()=>{
+      lsType = b.dataset.t;
+      document.querySelectorAll("#lsChips button").forEach(x=>x.classList.toggle("on", x===b));
+      renderLsList();
+    };
+  });
+  $("lsDate").addEventListener("change", renderLsList);
+  $("lsDateAll").onclick = ()=>{ $("lsDate").value = ""; renderLsList(); };
+  renderLsList();
+}
+function renderLsList(){
+  const d = state.data;
+  const hx = d.history.SUA_CHUA.map(h=>({t:"x", ts:h.ts, ngay:h.ngay, vt:h.vt, sl:h.sl, nguoi:h.nguoi,
+    sub:[h.nguoiNhan?"nhận: "+h.nguoiNhan:"", h.hangMuc, h.maXe?"xe "+h.maXe:"", h.ghichu].filter(Boolean).join(" · ")}));
+  const hn = d.history.NHAP.map(h=>({t:"n", ts:h.ts, ngay:h.ngay, vt:h.vt, sl:h.sl, nguoi:h.nguoi, sub:h.ghichu||""}));
+  const hd = d.history.DE_XUAT.map(h=>({t:"d", ts:h.ts, ngay:h.ngay, vt:h.vt, sl:h.sl, nguoi:h.nguoi, sub:h.ghichu||""}));
+  let hist = [...hx,...hn,...hd].sort((a,b)=> b.ts > a.ts ? 1 : -1);
+  if(lsType !== "all") hist = hist.filter(h=>h.t===lsType);
+  const df = $("lsDate").value;
+  if(df) hist = hist.filter(h=> h.ngay === isoToVN(df));
+  else hist = hist.slice(0,30);
+  const box = $("lsList"); box.innerHTML = "";
+  if(!hist.length){ box.innerHTML = '<div class="empty-note">'+((df||lsType!=="all")?"Không có phiếu nào khớp bộ lọc.":"Chưa có phiếu nào.")+'</div>'; return; }
+  hist.forEach(h=>{
+    const tag = h.t==="x" ? '<span class="hist-tag d" style="background:#FDE8E6;color:var(--danger)">XUẤT</span>'
+              : (h.t==="n" ? '<span class="hist-tag n">NHẬP</span>' : '<span class="hist-tag d">ĐỀ XUẤT</span>');
+    const div = document.createElement("div");
+    div.className = "hist-row"+(h.sl<0?" neg":"");
+    div.innerHTML = '<div class="top"><span>'+tag+esc(h.vt)+'</span><b>'+h.sl+'</b></div>'
+      +'<div class="sub">Ngày '+esc(h.ngay)+' · gửi '+esc(h.ts)+(h.nguoi?' · <b>'+esc(h.nguoi)+'</b>':'')+(h.sub?' · '+esc(h.sub):'')+'</div>';
     box.appendChild(div);
   });
 }
