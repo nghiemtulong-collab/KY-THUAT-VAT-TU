@@ -97,6 +97,8 @@ header{background:var(--deep);color:var(--white);padding:14px;position:sticky;to
 .item .add{flex-shrink:0;width:36px;height:36px;border-radius:10px;background:var(--deep-2);color:var(--white);border:0;font-size:21px;font-weight:700;cursor:pointer;line-height:1}
 .item.added{border-color:var(--safety);background:#FFF7EB}
 .item.added .add{background:var(--safety);color:var(--deep)}
+.item.out-of-stock{opacity:.62;background:#F1F2EF;border-style:dashed;cursor:not-allowed}
+.item.out-of-stock .add{width:auto;min-width:48px;padding:0 8px;background:#8A9690;color:var(--white);font-size:11px;text-transform:uppercase}
 .empty-note{color:var(--muted);font-size:14px;text-align:center;padding:14px 0}
 .slip-row{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px dashed var(--line)}
 .slip-row .info{flex:1;min-width:0}
@@ -233,7 +235,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.20-RC2.2.1";
+const APP_VERSION = "2026.07.20-RC2.2.2";
 // ==========================================================
 
 const $ = id => document.getElementById(id);
@@ -494,6 +496,19 @@ function slipSearchHTML(idPrefix){
 function bindSlipSearch(idPrefix){
   $(idPrefix+"Q").addEventListener("input", ()=>renderSlipSearch(idPrefix));
 }
+function isIssueFlow(){ return state.tab === "xuat" || state.tab === "suachua"; }
+function isAdjustmentOn(){ return !!($("adjChk") && $("adjChk").checked); }
+function stockByMa(ma){
+  const it = state.data && state.data.stock ? state.data.stock.find(x=>x.ma===ma) : null;
+  return it ? Number(it.ton || 0) : 0;
+}
+function validateStockAvailability(list, isAdjustment){
+  if(!isIssueFlow() || isAdjustment) return true;
+  const shortage = list.filter(r=>Number(r.qty) > stockByMa(r.ma));
+  if(!shortage.length) return true;
+  alert("Không đủ tồn kho:\n" + shortage.map(r=>"• "+r.ten+": cần "+r.qty+" "+r.dvt+", hiện còn "+stockByMa(r.ma)).join("\n") + "\n\nPhiếu chưa được gửi.");
+  return false;
+}
 function renderSlipSearch(idPrefix){
   const q = stripAccent($(idPrefix+"Q").value.trim());
   const box = $(idPrefix+"Res");
@@ -503,11 +518,22 @@ function renderSlipSearch(idPrefix){
   if(!hits.length){ box.innerHTML = '<div class="empty-note">Không tìm thấy — thử gõ ngắn hơn. Danh mục vật tư chưa import thì báo Leon.</div>'; return; }
   hits.forEach(it=>{
     const added = !!state.slip[it.ma];
+    const outOfStock = isIssueFlow() && !isAdjustmentOn() && Number(it.ton) <= 0;
     const div = document.createElement("div");
-    div.className = "item"+(added?" added":"");
-    div.innerHTML = '<div><div class="nm">'+esc(it.ten)+'</div><div class="cd">'+esc(it.ma)+' · '+esc(it.dvt)+' · Tồn '+it.ton+'</div></div><button class="add">'+(added?"✓":"+")+'</button>';
+    div.className = "item"+(added?" added":"")+(outOfStock && !added?" out-of-stock":"");
+    const buttonText = added ? "✓" : (outOfStock ? "Hết" : "+");
+    div.innerHTML = '<div><div class="nm">'+esc(it.ten)+'</div><div class="cd">'+esc(it.ma)+' · '+esc(it.dvt)+' · Tồn '+it.ton+'</div></div><button class="add">'+buttonText+'</button>';
     div.onclick = ()=>{
-      if(!state.slip[it.ma]) state.slip[it.ma] = {ma:it.ma,ten:it.ten,dvt:it.dvt,qty:1};
+      if(state.slip[it.ma]){
+        // Bấm lần hai vào thẻ đã chọn = bỏ khỏi phiếu.
+        delete state.slip[it.ma];
+      }else{
+        if(outOfStock){
+          alert('Vật tư "'+it.ten+'" hiện tồn '+it.ton+' '+it.dvt+'. Không thể xuất thêm. Nếu số thực tế khác, kiểm kê và lập phiếu điều chỉnh trước.');
+          return;
+        }
+        state.slip[it.ma] = {ma:it.ma,ten:it.ten,dvt:it.dvt,qty:1};
+      }
       renderSlipRows(); renderSlipSearch(idPrefix);
     };
     box.appendChild(div);
@@ -518,11 +544,24 @@ function slipBoxHTML(title){
 }
 function setQty(ma, v){
   v = parseInt(v,10);
-  const adj = $("adjChk") && $("adjChk").checked;
+  const adj = isAdjustmentOn();
   if(isNaN(v)) v = 1;
   if(v === 0) v = adj ? -1 : 1;
   if(!adj && v < 1) v = 1;
   if(v > 9999) v = 9999; if(v < -9999) v = -9999;
+  if(isIssueFlow() && !adj){
+    const ton = stockByMa(ma);
+    if(ton <= 0){
+      alert("Vật tư này hiện không còn tồn để xuất.");
+      delete state.slip[ma];
+      renderSlipRows();
+      return;
+    }
+    if(v > ton){
+      alert("Số lượng tối đa có thể xuất theo tồn hiện tại là "+ton+".");
+      v = ton;
+    }
+  }
   state.slip[ma].qty = v; renderSlipRows();
 }
 function renderSlipRows(){
@@ -543,7 +582,12 @@ function renderSlipRows(){
     minus.onclick = ()=>setQty(r.ma, r.qty-1);
     plus.onclick = ()=>setQty(r.ma, r.qty+1);
     d.querySelector(".qty input").onchange = e=>setQty(r.ma, e.target.value);
-    d.querySelector(".rm").onclick = ()=>{ delete state.slip[r.ma]; renderSlipRows(); };
+    d.querySelector(".rm").onclick = ()=>{
+      delete state.slip[r.ma];
+      renderSlipRows();
+      const prefix = state.tab === "suachua" ? "sc" : (state.tab === "xuat" ? "xk" : (state.tab === "nhap" ? "nk" : "dx"));
+      if($(prefix+"Q")) renderSlipSearch(prefix);
+    };
     rows.appendChild(d);
   });
 }
@@ -565,6 +609,8 @@ function bindAdjust(){
       if(on) bh.value = "";
       bh.disabled = on;
     }
+    const prefix = state.tab === "suachua" ? "sc" : (state.tab === "xuat" ? "xk" : (state.tab === "nhap" ? "nk" : "dx"));
+    if($(prefix+"Q")) renderSlipSearch(prefix);
   };
 }
 function validateSlipSign(list, isAdjustment){
@@ -602,6 +648,7 @@ function renderSuaChua(){
     if(!list.length) return;
     const isAdjustment = $("adjChk").checked;
     if(!validateSlipSign(list, isAdjustment)) return;
+    if(!validateStockAvailability(list, isAdjustment)) return;
     if(!$("scNguoi").value.trim()){ alert("Ghi tên người sửa."); return; }
     if(isAdjustment && !$("scNote").value.trim()){ alert("Phiếu điều chỉnh bắt buộc ghi chú lý do."); return; }
     if(isAdjustment && $("scBH").value){ alert("Phiếu điều chỉnh không được đóng sự cố."); return; }
@@ -761,6 +808,7 @@ function renderXuat(){
     if(!list.length) return;
     const isAdjustment = $("adjChk").checked;
     if(!validateSlipSign(list, isAdjustment)) return;
+    if(!validateStockAvailability(list, isAdjustment)) return;
     if(!$("xkNhan").value.trim()){ alert("Ghi tên người nhận."); return; }
     if(!$("xkHM").value){ alert("Chọn hạng mục xuất."); return; }
     if(!$("xkNote").value.trim()){ alert("Ghi lý do xuất."); return; }
