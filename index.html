@@ -82,6 +82,9 @@ header{background:var(--deep);color:var(--white);padding:14px;position:sticky;to
 .adjust-row input[type=checkbox]{width:20px;height:20px;margin-top:1px;accent-color:var(--safety)}
 .adjust-row .lbl{font-size:13px;font-weight:700}
 .adjust-row .sub{font-size:11.5px;color:var(--muted);font-weight:400;margin-top:2px}
+.reset-toggle{cursor:pointer;user-select:none}
+.reset-toggle.on{background:#FFF7EB}
+.reset-toggle input[type=checkbox]{flex-shrink:0}
 
 /* Tìm vật tư + slip */
 .search-box input{width:100%;border:2px solid var(--line);border-radius:12px;padding:13px 14px;font-family:inherit;font-size:16px;background:var(--white)}
@@ -230,7 +233,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.20-RC2.2";
+const APP_VERSION = "2026.07.20-RC2.2.1";
 // ==========================================================
 
 const $ = id => document.getElementById(id);
@@ -630,7 +633,7 @@ function renderBaoDuong(){
     '<div class="fbox"><div class="fbox-head"><span>GHI BẢO DƯỠNG — '+esc(XE)+'</span></div>'
    +'<div class="frow"><label>Hạng mục vừa làm</label><div class="radio-list" id="hmList">'+radios+'</div></div>'
    +'<div class="frow" id="gioRow" style="display:none"><label>Số giờ trên đồng hồ máy lúc bảo dưỡng</label><input type="number" id="bdGio" inputmode="numeric" placeholder="Vd: 12340"></div>'
-   +'<div class="frow adjust-row" id="resetGioRow" style="display:none"><input type="checkbox" id="bdResetGio"><div><div class="lbl">Đồng hồ giờ vừa thay / quay lại từ đầu</div><div class="sub">Chỉ tick khi đồng hồ thực sự được thay hoặc reset. Bắt buộc ghi rõ lý do trong Ghi chú.</div></div></div>'
+   +'<label class="frow adjust-row reset-toggle" id="resetGioRow" style="display:none" for="bdResetGio"><input type="checkbox" id="bdResetGio"><div><div class="lbl">Đồng hồ giờ vừa thay / quay lại từ đầu</div><div class="sub">Chạm lại vào dòng này để bỏ chọn. Chỉ tick khi đồng hồ thực sự được thay hoặc reset; bắt buộc ghi rõ lý do.</div></div></label>'
    +'<div class="frow"><label>Ngày</label><input type="date" id="bdNgay" required value="'+todayISO()+'"></div>'
    +'<div class="frow"><label>Người ghi</label><input type="text" id="bdNguoi" value="Bình"></div>'
    +'<div class="frow"><label>Ghi chú</label><input type="text" id="bdNote" placeholder="(không bắt buộc)"></div>'
@@ -644,9 +647,16 @@ function renderBaoDuong(){
       const isGio = sel.loai==="GIO";
       $("gioRow").style.display = isGio ? "block" : "none";
       $("resetGioRow").style.display = isGio ? "flex" : "none";
-      if(!isGio) $("bdResetGio").checked = false;
+      // Mỗi lần đổi hạng mục phải bỏ trạng thái reset cũ để tránh "dính tick" sang hạng mục khác.
+      $("bdResetGio").checked = false;
+      $("bdResetGio").disabled = !isGio;
+      $("resetGioRow").classList.remove("on");
     };
   });
+  // Đồng bộ màu trạng thái; label + for giúp toàn bộ dòng bấm được trên desktop và mobile.
+  $("bdResetGio").onchange = ()=>{
+    $("resetGioRow").classList.toggle("on", $("bdResetGio").checked);
+  };
   $("bar").classList.add("show");
   $("barSum").innerHTML = "Bảo dưỡng <b>"+esc(XE)+"</b>";
   const btn = $("btnSend");
