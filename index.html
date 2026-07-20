@@ -230,7 +230,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.19-RC2.1";
+const APP_VERSION = "2026.07.20-RC2.2";
 // ==========================================================
 
 const $ = id => document.getElementById(id);
@@ -630,6 +630,7 @@ function renderBaoDuong(){
     '<div class="fbox"><div class="fbox-head"><span>GHI BẢO DƯỠNG — '+esc(XE)+'</span></div>'
    +'<div class="frow"><label>Hạng mục vừa làm</label><div class="radio-list" id="hmList">'+radios+'</div></div>'
    +'<div class="frow" id="gioRow" style="display:none"><label>Số giờ trên đồng hồ máy lúc bảo dưỡng</label><input type="number" id="bdGio" inputmode="numeric" placeholder="Vd: 12340"></div>'
+   +'<div class="frow adjust-row" id="resetGioRow" style="display:none"><input type="checkbox" id="bdResetGio"><div><div class="lbl">Đồng hồ giờ vừa thay / quay lại từ đầu</div><div class="sub">Chỉ tick khi đồng hồ thực sự được thay hoặc reset. Bắt buộc ghi rõ lý do trong Ghi chú.</div></div></div>'
    +'<div class="frow"><label>Ngày</label><input type="date" id="bdNgay" required value="'+todayISO()+'"></div>'
    +'<div class="frow"><label>Người ghi</label><input type="text" id="bdNguoi" value="Bình"></div>'
    +'<div class="frow"><label>Ghi chú</label><input type="text" id="bdNote" placeholder="(không bắt buộc)"></div>'
@@ -640,7 +641,10 @@ function renderBaoDuong(){
       sel = hm[+r.value];
       document.querySelectorAll('#hmList label').forEach(l=>l.classList.remove("on"));
       r.closest("label").classList.add("on");
-      $("gioRow").style.display = sel.loai==="GIO" ? "block" : "none";
+      const isGio = sel.loai==="GIO";
+      $("gioRow").style.display = isGio ? "block" : "none";
+      $("resetGioRow").style.display = isGio ? "flex" : "none";
+      if(!isGio) $("bdResetGio").checked = false;
     };
   });
   $("bar").classList.add("show");
@@ -650,20 +654,23 @@ function renderBaoDuong(){
   btn.onclick = ()=>{
     if(!sel){ alert("Chọn hạng mục vừa làm."); return; }
     const gio = $("bdGio").value.trim();
+    const resetGio = sel.loai==="GIO" && $("bdResetGio").checked;
+    const bdNote = $("bdNote").value.trim();
     if(sel.loai==="GIO" && !gio){ alert("Hạng mục theo giờ — bắt buộc nhập số giờ đồng hồ. Không có số này hệ không tính được kỳ tới."); return; }
     if(sel.loai==="GIO" && (!Number.isInteger(Number(gio)) || Number(gio)<0)){ alert("Số giờ đồng hồ phải là số nguyên không âm."); return; }
-    if(sel.loai==="GIO" && sel.lastGio!=null && Number.isFinite(Number(sel.lastGio)) && Number(gio)<Number(sel.lastGio)){
-      alert("Số giờ "+gio+" NHỎ HƠN mốc gần nhất đã ghi ("+sel.lastGio+"h) của hạng mục này. Kiểm tra lại đồng hồ; nếu mốc cũ ghi nhầm quá cao, báo Leon sửa trong Sheet.");
+    if(resetGio && !bdNote){ alert("Reset đồng hồ giờ bắt buộc ghi chú lý do/thông tin thay đồng hồ."); return; }
+    if(sel.loai==="GIO" && !resetGio && sel.lastGio!=null && Number.isFinite(Number(sel.lastGio)) && Number(gio)<Number(sel.lastGio)){
+      alert("Số giờ "+gio+" NHỎ HƠN mốc gần nhất đã ghi ("+sel.lastGio+"h) của hạng mục này. Kiểm tra lại đồng hồ; nếu vừa thay/reset đồng hồ thì tick mục reset và ghi rõ lý do.");
       return;
     }
     if(!$("bdNguoi").value.trim()){ alert("Ghi tên người ghi."); return; }
     const ngay = requireDateVN("bdNgay"); if(!ngay) return;
     openConfirm({
       title: "Xác nhận BẢO DƯỠNG — "+XE,
-      summary: "• Hạng mục: <b>"+esc(sel.hangMuc)+"</b>"+(sel.loai==="GIO"?"<br>• Đồng hồ: <b>"+esc(gio)+"h</b> → kỳ tới lúc <b>"+(Number(gio)+sel.chuKy)+"h</b>":"")+"<br>• Ngày: "+ngay,
+      summary: "• Hạng mục: <b>"+esc(sel.hangMuc)+"</b>"+(sel.loai==="GIO"?"<br>• Đồng hồ: <b>"+esc(gio)+"h</b> → kỳ tới lúc <b>"+(Number(gio)+sel.chuKy)+"h</b>"+(resetGio?"<br><b>⚠ RESET ĐỒNG HỒ GIỜ</b>":""):"")+"<br>• Ngày: "+ngay,
       needPin: "BINH",
-      payload: { type:"BAO_DUONG", maXe:XE, hangMuc:sel.hangMuc, soGio:(sel.loai==="GIO"?Number(gio):""),
-                 nguoi:$("bdNguoi").value.trim(), note:$("bdNote").value.trim(), date:ngay },
+      payload: { type:"BAO_DUONG", maXe:XE, hangMuc:sel.hangMuc, soGio:(sel.loai==="GIO"?Number(gio):""), resetGio:resetGio,
+                 nguoi:$("bdNguoi").value.trim(), note:bdNote, date:ngay },
       doneMsg: ()=> "Đã ghi bảo dưỡng \""+sel.hangMuc+"\" cho "+XE+". Hạn kỳ tới đã cập nhật.",
       after: ()=>{ loadData(); }
     });
