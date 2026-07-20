@@ -181,6 +181,14 @@ body.dash header .hd-inner{max-width:760px}
 .gio-table td b{color:var(--deep-2)}
 .dash-note{font-size:11.5px;color:var(--muted);margin:4px 0 0}
 .seen-btn{border:1.5px solid var(--line);border-radius:10px;background:var(--white);font-family:inherit;font-weight:700;font-size:12.5px;padding:8px 13px;cursor:pointer;color:var(--deep-2)}
+
+/* Performance patch RC2.4.3 */
+.perf-pane{display:none}
+.perf-pane.on{display:block}
+.list-meta{display:flex;justify-content:space-between;gap:8px;align-items:center;color:var(--muted);font-size:12px;margin:7px 0}
+.load-more{width:100%;border:1.5px solid var(--line);border-radius:11px;background:var(--white);color:var(--deep-2);font-family:inherit;font-weight:800;font-size:13px;padding:11px;margin:6px 0 2px;cursor:pointer}
+.load-more:active{background:#FFF7EB}
+
 </style>
 </head>
 <body>
@@ -250,10 +258,12 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.20-RC2.4.2-P0";
+const APP_VERSION = "2026.07.20-RC2.4.3-PERF";
 // ==========================================================
 
-const $ = id => document.getElementById(id);
+const mainRoot = () => document.getElementById("main");
+// Khi render tab, $("main") trỏ vào pane đang hoạt động; ngoài quá trình render vẫn trỏ root thật.
+const $ = id => (id === "main" && window.__ktvtActivePane) ? window.__ktvtActivePane : document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const XE = (params.get("xe") || "").toUpperCase().trim();
 const DASH = (params.get("view") || "").toLowerCase() === "tong";
@@ -276,7 +286,10 @@ const NHOM_ORDER = ["MÁY XN","ĐIỆN XN","MÁY ĐK","ĐIỆN ĐK","CƠ KHÍ","
 const state = {
   data:null, tab:null, slip:{}, slipKind:null, pending:null,
   accessToken:"", accessScope:INITIAL_ACCESS_SCOPE, clientId:"", versionOk:false, sending:false,
-  dashTimer:null, daType:"all", daDate:""
+  dashTimer:null, daType:"all", daDate:"", refreshing:false,
+  cache:{}, panes:{}, tabDirty:{}, tonVisible:50,
+  lastDashRenderSeq:-1, lastDashRenderDay:"", lastDashRenderAt:0,
+  renderMetrics:{}
 };
 
 // Xóa PIN từng được các phiên bản cũ lưu trong trình duyệt.
@@ -329,6 +342,39 @@ function requireDateVN(id){
 }
 function vnKey(ngay){ const m = String(ngay||"").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? m[3]+m[2].padStart(2,"0")+m[1].padStart(2,"0") : "00000000"; }
 function sortKey(h){ return vnKey(h.ngay) + " " + (String(h.ts||"").split(" ")[1] || ""); }
+
+function debounce(fn, wait=100){
+  let timer=null;
+  return function(...args){ clearTimeout(timer); timer=setTimeout(()=>fn.apply(this,args),wait); };
+}
+function prepareDataCache(d){
+  const stock = d.stock || [];
+  stock.forEach(r=>r.key=stripAccent(r.ten+" "+r.ma+" "+(r.macu||"")));
+  const h = d.history || {};
+  const hx=(h.XUAT||[]).map(x=>({t:"x",ts:x.ts,ngay:x.ngay,vt:x.vt,sl:x.sl,dvt:x.dvt,nguoi:x.nguoi,txnId:x.txnId,refTxnId:x.refTxnId,sub:[x.nguoiNhan?"nhận "+x.nguoiNhan:"",x.hangMuc,x.maXe?"xe "+x.maXe:"",x.ghichu].filter(Boolean).join(" · ")}));
+  const hn=(h.NHAP||[]).map(x=>({t:"n",ts:x.ts,ngay:x.ngay,vt:x.vt,sl:x.sl,dvt:x.dvt,nguoi:x.nguoi,txnId:x.txnId,refTxnId:x.refTxnId,sub:x.ghichu||""}));
+  const hd=(h.DE_XUAT||[]).map(x=>({t:"d",ts:x.ts,ngay:x.ngay,vt:x.vt,sl:x.sl,dvt:x.dvt,nguoi:x.nguoi,txnId:x.txnId,sub:x.ghichu||""}));
+  state.cache = {
+    khoHistorySorted:[...hx,...hn,...hd].sort((a,b)=>sortKey(b)>sortKey(a)?1:-1),
+    dataSeq:Number(d.latestSeq||0),
+    preparedAt:Date.now()
+  };
+}
+function resetTabPanes(){
+  window.__ktvtActivePane=null;
+  const root=mainRoot();
+  if(root) root.innerHTML="";
+  state.panes={}; state.tabDirty={};
+}
+function isCacheableTab(id){ return ["ton","lichsu","hoso"].includes(id); }
+function activatePane(id){
+  Object.keys(state.panes).forEach(k=>state.panes[k].classList.toggle("on",k===id));
+}
+function recordRenderMetric(id, started){
+  const ms=Math.round((performance.now()-started)*10)/10;
+  state.renderMetrics[id]=ms;
+  try{ console.debug("[KTVT PERF] render",id,ms+"ms"); }catch(_){ }
+}
 function navHTML(cur){
   const base = location.origin + location.pathname;
   const L = [];
@@ -427,21 +473,24 @@ async function loginAccess(pin){
 }
 async function loadData(){
   if(!state.accessToken){$("ovAccess").classList.add("show");return;}
-  $("main").innerHTML='<div class="load">Đang tải dữ liệu…</div>';
+  window.__ktvtActivePane=null;
+  mainRoot().innerHTML='<div class="load">Đang tải dữ liệu…</div>';
   try{
     const j=await apiCall({type:"VIEW"},30000);
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok")throw new Error(j.message||"Không tải được dữ liệu.");
     state.data=j;state.versionOk=!j.versionMismatch&&j.version===APP_VERSION;document.documentElement.dataset.appVersion=APP_VERSION;
-    (j.stock||[]).forEach(r=>r.key=stripAccent(r.ten+" "+r.ma+" "+(r.macu||"")));
+    prepareDataCache(j);
+    resetTabPanes();
     $("ovAccess").classList.remove("show");
     if(!state.versionOk){
-      $("main").innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Không được gửi phiếu. Chờ GitHub/Apps Script deploy xong rồi Ctrl+F5.</div>';
+      mainRoot().innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Không được gửi phiếu. Chờ GitHub/Apps Script deploy xong rồi Ctrl+F5.</div>';
       $("hdSub").textContent="Lệch phiên bản — đã khóa ghi dữ liệu";return;
     }
     initUI();
   }catch(err){
-    $("main").innerHTML='<div class="load">Không tải được dữ liệu — '+esc(err&&err.message?err.message:"kiểm tra mạng")+'. <a href="#" onclick="loadData();return false;">Bấm tải lại</a>.</div>';
+    window.__ktvtActivePane=null;
+    mainRoot().innerHTML='<div class="load">Không tải được dữ liệu — '+esc(err&&err.message?err.message:"kiểm tra mạng")+'. <a href="#" onclick="loadData();return false;">Bấm tải lại</a>.</div>';
   }
 }
 
@@ -453,32 +502,30 @@ async function refreshViewSilently(){
   state.refreshing=true;
   try{
     const j=await apiCall({type:"VIEW"},30000);
-
-    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){
-      requireRelogin(j.message);
-      return;
-    }
-
-    // Lỗi tải nền không xóa dữ liệu đang hiển thị; vòng sau sẽ thử lại.
+    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok") return;
-
     if(j.versionMismatch || j.version!==APP_VERSION){
-      state.versionOk=false;
-      stopDashRefresh();
-      $("main").innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Đã dừng tự cập nhật và khóa ghi dữ liệu. Ctrl+F5 sau khi deploy hoàn tất.</div>';
-      $("hdSub").textContent="Lệch phiên bản — đã khóa ghi dữ liệu";
+      state.versionOk=false;stopDashRefresh();
+      window.__ktvtActivePane=null;
+      mainRoot().innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Đã dừng tự cập nhật và khóa ghi dữ liệu. Ctrl+F5 sau khi deploy hoàn tất.</div>';
+      $("hdSub").textContent="Lệch phiên bản — đã khóa ghi dữ liệu";return;
+    }
+
+    const prevSeq=Number(state.data&&state.data.latestSeq||0);
+    const nextSeq=Number(j.latestSeq||0);
+    const day=todayISO();
+    const canSkip=prevSeq===nextSeq && state.lastDashRenderDay===day && (Date.now()-state.lastDashRenderAt)<300000;
+    if(canSkip){
+      state.data.updated=j.updated;
+      const updated=document.getElementById("dashUpdated");
+      if(updated) updated.firstChild.textContent="Cập nhật "+j.updated;
       return;
     }
 
-    state.data=j;
-    state.versionOk=true;
-    (j.stock||[]).forEach(r=>r.key=stripAccent(r.ten+" "+r.ma+" "+(r.macu||"")));
-    renderDash();
+    state.data=j;state.versionOk=true;prepareDataCache(j);renderDash();
   }catch(_){
     // Giữ dữ liệu cũ khi mạng chập chờn; tự thử lại ở chu kỳ kế tiếp.
-  }finally{
-    state.refreshing=false;
-  }
+  }finally{state.refreshing=false;}
 }
 
 function initUI(){
@@ -512,30 +559,35 @@ function initUI(){
 }
 
 function buildTabs(list){
-  const t = $("tabs");
-  t.innerHTML = "";
+  const t=$("tabs");t.innerHTML="";resetTabPanes();
   list.forEach(([id,label],i)=>{
-    const b = document.createElement("button");
-    b.textContent = label;
-    b.className = i===0 ? "on" : "";
-    b.onclick = ()=>{
-      t.querySelectorAll("button").forEach(x=>x.classList.remove("on"));
-      b.classList.add("on");
-      openTab(id);
-    };
+    const b=document.createElement("button");b.textContent=label;b.className=i===0?"on":"";
+    b.onclick=()=>{t.querySelectorAll("button").forEach(x=>x.classList.remove("on"));b.classList.add("on");openTab(id);};
     t.appendChild(b);
   });
   openTab(list[0][0]);
 }
 
 function openTab(id){
-  state.tab = id;
-  state.slip = {}; state.slipKind = null;
-  document.body.classList.remove("adjusting");
-  $("bar").classList.remove("show");
-  const fn = { hoso:renderHoSo, baohong:renderBaoHong, suachua:renderSuaChua, baoduong:renderBaoDuong,
-               ton:renderTon, xuat:renderXuat, nhap:renderNhap, dexuat:renderDeXuat, lichsu:renderLichSu, qc:renderQC }[id];
-  fn();
+  state.tab=id;state.slip={};state.slipKind=null;document.body.classList.remove("adjusting");$("bar").classList.remove("show");
+  const fn={hoso:renderHoSo,baohong:renderBaoHong,suachua:renderSuaChua,baoduong:renderBaoDuong,ton:renderTon,xuat:renderXuat,nhap:renderNhap,dexuat:renderDeXuat,lichsu:renderLichSu,qc:renderQC}[id];
+  if(!fn) return;
+
+  // Form nhập liệu luôn render mới để không giữ nhầm dữ liệu cũ. Chỉ cache các tab đọc nặng.
+  Object.keys(state.panes).forEach(k=>{
+    if(!isCacheableTab(k) && k!==id){state.panes[k].remove();delete state.panes[k];}
+  });
+
+  if(isCacheableTab(id) && state.panes[id] && !state.tabDirty[id]){
+    activatePane(id);window.__ktvtActivePane=null;return;
+  }
+
+  if(state.panes[id]){state.panes[id].remove();delete state.panes[id];}
+  const pane=document.createElement("div");pane.className="perf-pane on";pane.dataset.tab=id;
+  mainRoot().appendChild(pane);state.panes[id]=pane;activatePane(id);
+  window.__ktvtActivePane=pane;
+  const started=performance.now();
+  try{fn();state.tabDirty[id]=false;}finally{window.__ktvtActivePane=null;recordRenderMetric(id,started);}
 }
 
 /* ==================== HỒ SƠ XE ==================== */
@@ -944,41 +996,32 @@ function renderBaoDuong(){
 /* ==================== TỒN KHO ==================== */
 let tonNhom = "ALL";
 function renderTon(){
-  const d = state.data;
-  const nhoms = NHOM_ORDER.filter(n => d.stock.some(s=>s.nhom===n));
-  d.stock.forEach(s=>{ if(s.nhom && !nhoms.includes(s.nhom) && !NHOM_ORDER.includes(s.nhom)) nhoms.push(s.nhom); });
-  let chips = '<button data-n="ALL" class="'+(tonNhom==="ALL"?"on":"")+'">Tất cả</button>'
-            + nhoms.map(n=>'<button data-n="'+esc(n)+'" class="'+(tonNhom===n?"on":"")+'">'+esc(n)+'</button>').join("");
-  $("main").innerHTML =
-    '<div class="warn-note">⚠️ Số liệu ghi nhận từ phiếu — <b>chưa phải kết quả kiểm kê</b>. Số chính thức theo đối chiếu với sổ và đếm thực tế.</div>'
-   +'<div class="search-box"><input type="search" id="tonQ" placeholder="Tìm vật tư… (không dấu cũng được)" autocomplete="off"></div>'
-   +'<div class="chips" id="tonChips">'+chips+'</div>'
-   +'<div class="hint">Cập nhật '+esc(d.updated)+'</div><div id="tonList"></div>';
-  $("tonQ").addEventListener("input", renderTonList);
-  document.querySelectorAll("#tonChips button").forEach(b=>{
-    b.onclick = ()=>{
-      tonNhom = b.dataset.n;
-      document.querySelectorAll("#tonChips button").forEach(x=>x.classList.toggle("on", x===b));
-      renderTonList();
-    };
-  });
+  const d=state.data;state.tonVisible=50;
+  const nhoms=NHOM_ORDER.filter(n=>d.stock.some(s=>s.nhom===n));
+  d.stock.forEach(s=>{if(s.nhom&&!nhoms.includes(s.nhom)&&!NHOM_ORDER.includes(s.nhom))nhoms.push(s.nhom);});
+  const chips='<button data-n="ALL" class="'+(tonNhom==="ALL"?"on":"")+'">Tất cả</button>'+nhoms.map(n=>'<button data-n="'+esc(n)+'" class="'+(tonNhom===n?"on":"")+'">'+esc(n)+'</button>').join("");
+  $("main").innerHTML='<div class="warn-note">⚠️ Số liệu ghi nhận từ phiếu — <b>chưa phải kết quả kiểm kê</b>. Số chính thức theo đối chiếu với sổ và đếm thực tế.</div>'
+    +'<div class="search-box"><input type="search" id="tonQ" placeholder="Tìm vật tư… (không dấu cũng được)" autocomplete="off"></div>'
+    +'<div class="chips" id="tonChips">'+chips+'</div><div class="hint">Cập nhật '+esc(d.updated)+'</div><div id="tonList"></div>';
+  const searchLater=debounce(()=>{state.tonVisible=50;renderTonList();},90);
+  $("tonQ").addEventListener("input",searchLater);
+  document.querySelectorAll("#tonChips button").forEach(b=>{b.onclick=()=>{tonNhom=b.dataset.n;state.tonVisible=50;document.querySelectorAll("#tonChips button").forEach(x=>x.classList.toggle("on",x===b));renderTonList();};});
   renderTonList();
 }
 function renderTonList(){
-  const q = stripAccent($("tonQ").value.trim());
-  let rows = state.data.stock.filter(r => (tonNhom==="ALL" || r.nhom===tonNhom) && (!q || r.key.includes(q)));
-  const box = $("tonList"); box.innerHTML = "";
-  if(!state.data.stock.length){ box.innerHTML = '<div class="empty-note">Danh mục vật tư chưa import — chờ file của Vân.</div>'; return; }
-  if(!rows.length){ box.innerHTML = '<div class="empty-note">Không có vật tư khớp.</div>'; return; }
-  rows.forEach(r=>{
-    const low = r.min > 0 && r.ton <= r.min;
-    const div = document.createElement("div");
-    div.className = "stock-row"+(r.ton<=0?" zero":"")+(low?" low":"");
-    div.innerHTML = '<div><div class="nm">'+esc(r.ten)+(low?'<span class="low-tag">⚠ DƯỚI NGƯỠNG</span>':'')+'</div>'
-      +'<div class="cd">'+esc(r.ma)+(r.macu?' ('+esc(r.macu)+')':'')+' · '+esc(r.nhom)+' · Nhập '+r.nhap+' · Xuất '+r.xuat+(r.min>0?' · Min '+r.min:'')+'</div></div>'
-      +'<div class="ton">'+r.ton+' <small>'+esc(r.dvt)+'</small></div>';
-    box.appendChild(div);
-  });
+  const q=stripAccent($("tonQ").value.trim());
+  const all=state.data.stock.filter(r=>(tonNhom==="ALL"||r.nhom===tonNhom)&&(!q||r.key.includes(q)));
+  const box=$("tonList");
+  if(!state.data.stock.length){box.innerHTML='<div class="empty-note">Danh mục vật tư chưa import — chờ file của Vân.</div>';return;}
+  if(!all.length){box.innerHTML='<div class="empty-note">Không có vật tư khớp.</div>';return;}
+  const rows=all.slice(0,state.tonVisible);
+  const htmlRows=rows.map(r=>{
+    const low=r.min>0&&r.ton<=r.min;
+    return '<div class="stock-row'+(r.ton<=0?' zero':'')+(low?' low':'')+'"><div><div class="nm">'+esc(r.ten)+(low?'<span class="low-tag">⚠ DƯỚI NGƯỠNG</span>':'')+'</div><div class="cd">'+esc(r.ma)+(r.macu?' ('+esc(r.macu)+')':'')+' · '+esc(r.nhom)+' · Nhập '+r.nhap+' · Xuất '+r.xuat+(r.min>0?' · Min '+r.min:'')+'</div></div><div class="ton">'+r.ton+' <small>'+esc(r.dvt)+'</small></div></div>';
+  }).join("");
+  const remain=all.length-rows.length;
+  box.innerHTML='<div class="list-meta"><span>Hiển thị '+rows.length+'/'+all.length+' mã</span><span>Mỗi lần 50 mã</span></div>'+htmlRows+(remain>0?'<button class="load-more" id="tonMore">Xem thêm '+Math.min(50,remain)+' mã</button>':'');
+  const more=$("tonMore");if(more)more.onclick=()=>{state.tonVisible+=50;renderTonList();};
 }
 
 /* ==================== XUẤT KHO (PIN_VAN) — sổ riêng XUAT_RESP ==================== */
@@ -1049,22 +1092,15 @@ function renderLichSu(){
   $("lsDate").addEventListener("change",renderLsList);$("lsDateAll").onclick=()=>{$("lsDate").value="";renderLsList();};renderLsList();
 }
 function renderLsList(){
-  const d=state.data;
-  const hx=d.history.XUAT.map(h=>({t:"x",ts:h.ts,ngay:h.ngay,vt:h.vt,sl:h.sl,dvt:h.dvt,nguoi:h.nguoi,txnId:h.txnId,refTxnId:h.refTxnId,sub:[h.nguoiNhan?"nhận "+h.nguoiNhan:"",h.hangMuc,h.maXe?"xe "+h.maXe:"",h.ghichu].filter(Boolean).join(" · ")}));
-  const hn=d.history.NHAP.map(h=>({t:"n",ts:h.ts,ngay:h.ngay,vt:h.vt,sl:h.sl,dvt:h.dvt,nguoi:h.nguoi,txnId:h.txnId,refTxnId:h.refTxnId,sub:h.ghichu||""}));
-  const hd=d.history.DE_XUAT.map(h=>({t:"d",ts:h.ts,ngay:h.ngay,vt:h.vt,sl:h.sl,dvt:h.dvt,nguoi:h.nguoi,txnId:h.txnId,sub:h.ghichu||""}));
-  let hist=[...hx,...hn,...hd].sort((a,b)=>sortKey(b)>sortKey(a)?1:-1);
+  let hist=(state.cache.khoHistorySorted||[]);
   if(lsType!=="all")hist=hist.filter(h=>h.t===lsType);
   const df=$("lsDate").value;if(df)hist=hist.filter(h=>h.ngay===isoToVN(df));else hist=hist.slice(0,50);
-  const box=$("lsList");box.innerHTML="";
+  const box=$("lsList");
   if(!hist.length){box.innerHTML='<div class="empty-note">Không có phiếu nào khớp bộ lọc.</div>';return;}
-  hist.forEach(h=>{
+  box.innerHTML=hist.map(h=>{
     const tag=h.t==="x"?'<span class="hist-tag d" style="background:#FDE8E6;color:var(--danger)">XUẤT</span>':(h.t==="n"?'<span class="hist-tag n">NHẬP</span>':'<span class="hist-tag d">ĐỀ XUẤT</span>');
-    const div=document.createElement("div");div.className="hist-row"+(h.sl<0?" neg":"");
-    div.innerHTML='<div class="top"><span>'+tag+esc(h.vt)+'</span><b>'+h.sl+' '+esc(h.dvt||"")+'</b></div>'
-      +'<div class="sub">Ngày '+esc(h.ngay)+' · '+esc(h.nguoi||"")+(h.sub?' · '+esc(h.sub):'')+'<br><b>Mã giao dịch: '+esc(h.txnId||"")+'</b>'+(h.refTxnId?' · đảo '+esc(h.refTxnId):'')+'</div>';
-    box.appendChild(div);
-  });
+    return '<div class="hist-row'+(h.sl<0?' neg':'')+'"><div class="top"><span>'+tag+esc(h.vt)+'</span><b>'+h.sl+' '+esc(h.dvt||"")+'</b></div><div class="sub">Ngày '+esc(h.ngay)+' · '+esc(h.nguoi||"")+(h.sub?' · '+esc(h.sub):'')+'<br><b>Mã giao dịch: '+esc(h.txnId||"")+'</b>'+(h.refTxnId?' · đảo '+esc(h.refTxnId):'')+'</div></div>';
+  }).join("");
 }
 
 /* ==================== DASHBOARD TỔNG (?view=tong) ==================== */
@@ -1075,6 +1111,9 @@ function ageDays(ngayVN){
   return Math.max(0, Math.round((t - d) / 86400000));
 }
 function renderDash(){
+  state.lastDashRenderSeq=Number(state.data&&state.data.latestSeq||0);
+  state.lastDashRenderDay=todayISO();
+  state.lastDashRenderAt=Date.now();
   const d=state.data,todayVN=isoToVN(todayISO());
   const latestSeq=Math.max(0,Number(d.latestSeq||0));let seen=latestSeq;
   try{const raw=localStorage.getItem("ktvt_seen_seq");if(raw===null)localStorage.setItem("ktvt_seen_seq",String(latestSeq));else seen=Math.max(0,parseInt(raw,10)||0);if(latestSeq<seen){seen=latestSeq;localStorage.setItem("ktvt_seen_seq",String(latestSeq));}}catch(_){seen=latestSeq;}
@@ -1101,7 +1140,7 @@ function renderDash(){
    +'<div class="count-card'+(pendingQC.length?' bad':'')+'"><div class="num">'+pendingQC.length+'</div><div class="lb">CHỜ QC</div></div>'
    +'<div class="count-card'+(over.length?' bad':'')+'"><div class="num">'+over.length+'</div><div class="lb">QUÁ HẠN BD</div></div>'
    +'<div class="count-card'+(low.length?' bad':'')+'"><div class="num">'+low.length+'</div><div class="lb">DƯỚI MIN</div></div></div>'
-   +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><div class="dash-note">Cập nhật '+esc(d.updated)+(fresh?' · <b style="color:var(--danger)">'+fresh+' phiếu mới</b>':'')+'</div><button class="seen-btn" id="btnSeen">Đánh dấu đã xem</button></div>';
+   +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><div class="dash-note" id="dashUpdated">Cập nhật '+esc(d.updated)+(fresh?' · <b style="color:var(--danger)">'+fresh+' phiếu mới</b>':'')+'</div><button class="seen-btn" id="btnSeen">Đánh dấu đã xem</button></div>';
 
   const groups={};d.xe.forEach(x=>{(groups[x.loai]=groups[x.loai]||[]).push(x);});
   html+='<div class="sec-t">TRẠNG THÁI PHƯƠNG TIỆN</div>';
