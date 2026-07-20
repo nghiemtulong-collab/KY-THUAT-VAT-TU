@@ -250,7 +250,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.20-RC2.4.1-P0";
+const APP_VERSION = "2026.07.20-RC2.4.2-P0";
 // ==========================================================
 
 const $ = id => document.getElementById(id);
@@ -258,14 +258,24 @@ const params = new URLSearchParams(location.search);
 const XE = (params.get("xe") || "").toUpperCase().trim();
 const DASH = (params.get("view") || "").toLowerCase() === "tong";
 const MODE = DASH ? "dash" : (XE ? "xe" : "kho");
-const ACCESS_SCOPE = MODE === "kho" ? "KHO" : "KYTHUAT";
+function initialAccessScope(){
+  if(MODE === "kho") return "KHO";
+  if(MODE === "dash") return "DASHBOARD";
+  // Khi trưởng bộ phận đi từ Dashboard xuống hồ sơ xe trong cùng tab,
+  // ưu tiên dùng lại token Dashboard. Người quét QR bình thường dùng scope XE.
+  try{
+    if(sessionStorage.getItem("ktvt_access_token_DASHBOARD")) return "DASHBOARD";
+  }catch(_){ }
+  return "XE";
+}
+const INITIAL_ACCESS_SCOPE = initialAccessScope();
 
 const TO_TRUONG = ["Học (tổ máy XN)","Thông (tổ điện XN)","Ân (tổ máy ĐK)","Dũng (tổ điện ĐK)","Trọng (tổ cơ khí)","Nhi (tổ điện CN)"];
 const NHOM_ORDER = ["MÁY XN","ĐIỆN XN","MÁY ĐK","ĐIỆN ĐK","CƠ KHÍ","ĐIỆN CN"];
 
 const state = {
   data:null, tab:null, slip:{}, slipKind:null, pending:null,
-  accessToken:"", accessScope:ACCESS_SCOPE, clientId:"", versionOk:false, sending:false,
+  accessToken:"", accessScope:INITIAL_ACCESS_SCOPE, clientId:"", versionOk:false, sending:false,
   dashTimer:null, daType:"all", daDate:""
 };
 
@@ -279,6 +289,13 @@ const state = {
       if(k && k.startsWith("ktvt_pin_")) keys.push(k);
     }
     keys.forEach(k => localStorage.removeItem(k));
+  }catch(_){ }
+})();
+
+// RC2.4.2: token KYTHUAT cũ có quyền quá rộng, phải xóa để không tái sử dụng.
+(function purgeLegacyAccessTokens(){
+  try{
+    sessionStorage.removeItem("ktvt_access_token_KYTHUAT");
   }catch(_){ }
 })();
 
@@ -334,10 +351,25 @@ function initClientId(){
 }
 state.clientId = initClientId();
 function makeRequestId(){ return randomId("req"); }
-function authStorageKey(){ return "ktvt_access_token_" + ACCESS_SCOPE; }
-function readAccessToken(){ try{return sessionStorage.getItem(authStorageKey())||"";}catch(_){return "";} }
-function saveAccessToken(token){ try{sessionStorage.setItem(authStorageKey(),token);}catch(_){} state.accessToken=token||""; }
-function clearAccessToken(){ try{sessionStorage.removeItem(authStorageKey());}catch(_){} state.accessToken=""; }
+function authStorageKey(scope=state.accessScope){
+  return scope === "XE" ? "ktvt_access_token_XE_" + XE : "ktvt_access_token_" + scope;
+}
+function readAccessToken(scope=state.accessScope){
+  try{return sessionStorage.getItem(authStorageKey(scope))||"";}catch(_){return "";}
+}
+function saveAccessToken(token,scope=state.accessScope){
+  try{sessionStorage.setItem(authStorageKey(scope),token);}catch(_){}
+  state.accessToken=token||"";
+}
+function clearAccessToken(scope=state.accessScope){
+  try{sessionStorage.removeItem(authStorageKey(scope));}catch(_){}
+  state.accessToken="";
+}
+function switchAccessScope(scope){
+  state.accessScope=scope;
+  state.accessToken=readAccessToken(scope);
+  configureAccessOverlay();
+}
 async function rawPost(body, timeoutMs=30000){
   const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),timeoutMs);
   try{
@@ -346,30 +378,59 @@ async function rawPost(body, timeoutMs=30000){
   }finally{clearTimeout(timer);}
 }
 async function apiCall(payload, timeoutMs=30000){
-  const body=Object.assign({},payload,{accessToken:state.accessToken,accessScope:ACCESS_SCOPE,clientId:state.clientId,clientVersion:APP_VERSION});
+  const body=Object.assign({},payload,{accessToken:state.accessToken,accessScope:state.accessScope,clientId:state.clientId,clientVersion:APP_VERSION});
+  if(state.accessScope==="XE" && !body.maXe) body.maXe=XE;
   return rawPost(body,timeoutMs);
 }
 function configureAccessOverlay(){
-  const isKho=ACCESS_SCOPE==="KHO";
-  $("accessTitle").textContent=isKho?"Đăng nhập Kho vật tư":"Đăng nhập Bảng tổng / Hồ sơ kỹ thuật";
-  $("accessLabel").textContent=isKho?"Mật khẩu Kho vật tư":"Mật khẩu hệ thống kỹ thuật";
-  $("accessDesc").textContent="Mật khẩu không được lưu. Sau khi đăng nhập, bạn có thể chuyển các mục trong "+(isKho?"Kho vật tư":"Bảng tổng và hồ sơ phương tiện")+" mà không nhập lại đến khi đóng tab hoặc đăng xuất.";
+  const scope=state.accessScope;
+  if(scope==="KHO"){
+    $("accessTitle").textContent="Đăng nhập Kho vật tư";
+    $("accessLabel").textContent="Mật khẩu Kho vật tư";
+    $("accessDesc").textContent="Sau khi đăng nhập, bạn có thể chuyển các tab Kho mà không nhập lại đến khi đóng tab hoặc đăng xuất.";
+  }else if(scope==="DASHBOARD"){
+    $("accessTitle").textContent=MODE==="xe"?"Quyền Dashboard — hồ sơ "+XE:"Đăng nhập Bảng tổng quản lý";
+    $("accessLabel").textContent="Mật khẩu Dashboard trưởng bộ phận";
+    $("accessDesc").textContent="Quyền quản lý cho phép xem Bảng tổng, điều phối, QC và mở hồ sơ tất cả phương tiện trong cùng tab.";
+  }else{
+    $("accessTitle").textContent="Mở hồ sơ phương tiện "+XE;
+    $("accessLabel").textContent="Mật khẩu QR phương tiện";
+    $("accessDesc").textContent="Sau khi đăng nhập, giữ nguyên đầy đủ Hồ sơ, Báo hỏng, Sửa chữa và Bảo dưỡng của "+XE+". Mật khẩu này không mở được Bảng tổng.";
+  }
 }
 function showAccessError(msg){
   $("accessErr").textContent=msg;$("accessErr").style.display="block";$("accessPin").value="";$("accessPin").focus();
 }
+function stopDashRefresh(){
+  if(state.dashTimer){
+    clearInterval(state.dashTimer);
+    state.dashTimer=null;
+  }
+  state.refreshing=false;
+}
 function requireRelogin(msg){
-  clearAccessToken();$("ovAccess").classList.add("show");showAccessError(msg||"Phiên đăng nhập không còn hiệu lực. Đăng nhập lại.");
+  stopDashRefresh();
+  const failedScope=state.accessScope;
+  clearAccessToken(failedScope);
+
+  // Hồ sơ xe mở từ Dashboard: nếu token quản lý hết hạn, hạ về login QR XE
+  // thay vì giữ người dùng ở một scope không còn hợp lệ.
+  if(MODE==="xe" && failedScope==="DASHBOARD"){
+    switchAccessScope("XE");
+  }
+
+  $("ovAccess").classList.add("show");
+  showAccessError(msg||"Phiên đăng nhập không còn hiệu lực. Đăng nhập lại.");
 }
 async function loginAccess(pin){
-  return rawPost({type:"AUTH_LOGIN",accessScope:ACCESS_SCOPE,accessPin:pin,clientId:state.clientId,clientVersion:APP_VERSION},30000);
+  return rawPost({type:"AUTH_LOGIN",accessScope:state.accessScope,maXe:(state.accessScope==="XE"?XE:""),accessPin:pin,clientId:state.clientId,clientVersion:APP_VERSION},30000);
 }
 async function loadData(){
   if(!state.accessToken){$("ovAccess").classList.add("show");return;}
   $("main").innerHTML='<div class="load">Đang tải dữ liệu…</div>';
   try{
     const j=await apiCall({type:"VIEW"},30000);
-    if(["access_required","access_invalid","access_expired"].includes(j.status)){requireRelogin(j.message);return;}
+    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok")throw new Error(j.message||"Không tải được dữ liệu.");
     state.data=j;state.versionOk=!j.versionMismatch&&j.version===APP_VERSION;document.documentElement.dataset.appVersion=APP_VERSION;
     (j.stock||[]).forEach(r=>r.key=stripAccent(r.ten+" "+r.ma+" "+(r.macu||"")));
@@ -381,6 +442,42 @@ async function loadData(){
     initUI();
   }catch(err){
     $("main").innerHTML='<div class="load">Không tải được dữ liệu — '+esc(err&&err.message?err.message:"kiểm tra mạng")+'. <a href="#" onclick="loadData();return false;">Bấm tải lại</a>.</div>';
+  }
+}
+
+// Tự làm mới Bảng tổng mà không yêu cầu đăng nhập lại trong cùng phiên tab.
+// Hàm này bị thiếu ở RC2.4.1-P0 ban đầu, làm trang Kỹ thuật báo
+// "refreshViewSilently is not defined" ngay sau khi đăng nhập.
+async function refreshViewSilently(){
+  if(MODE!=="dash" || !state.accessToken || state.refreshing) return;
+  state.refreshing=true;
+  try{
+    const j=await apiCall({type:"VIEW"},30000);
+
+    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){
+      requireRelogin(j.message);
+      return;
+    }
+
+    // Lỗi tải nền không xóa dữ liệu đang hiển thị; vòng sau sẽ thử lại.
+    if(j.status!=="ok") return;
+
+    if(j.versionMismatch || j.version!==APP_VERSION){
+      state.versionOk=false;
+      stopDashRefresh();
+      $("main").innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Đã dừng tự cập nhật và khóa ghi dữ liệu. Ctrl+F5 sau khi deploy hoàn tất.</div>';
+      $("hdSub").textContent="Lệch phiên bản — đã khóa ghi dữ liệu";
+      return;
+    }
+
+    state.data=j;
+    state.versionOk=true;
+    (j.stock||[]).forEach(r=>r.key=stripAccent(r.ten+" "+r.ma+" "+(r.macu||"")));
+    renderDash();
+  }catch(_){
+    // Giữ dữ liệu cũ khi mạng chập chờn; tự thử lại ở chu kỳ kế tiếp.
+  }finally{
+    state.refreshing=false;
   }
 }
 
@@ -404,7 +501,10 @@ function initUI(){
     $("xeHero").style.display = "flex";
     $("xeCode").textContent = xe.ma;
     $("xeLoai").textContent = xe.loai + (xe.ten ? " · " + xe.ten : "");
-    buildTabs([["hoso","📋 Hồ sơ"],["baohong","🚨 Báo hỏng"],["suachua","🔧 Sửa chữa"],["qc","✅ QC"],["baoduong","🛠 Bảo dưỡng"]]);
+    const xeTabs=[["hoso","📋 Hồ sơ"],["baohong","🚨 Báo hỏng"],["suachua","🔧 Sửa chữa"]];
+    if(state.accessScope==="DASHBOARD") xeTabs.push(["qc","✅ QC"]);
+    xeTabs.push(["baoduong","🛠 Bảo dưỡng"]);
+    buildTabs(xeTabs);
   }else{
     $("hdSub").innerHTML = "Kho vật tư sửa chữa" + navHTML("kho");
     buildTabs([["ton","📦 Tồn"],["xuat","📤 Xuất"],["nhap","📥 Nhập"],["dexuat","🧾 Đề xuất"],["lichsu","🕘 Lịch sử"]]);
@@ -1136,7 +1236,7 @@ async function sendPending(){
   try{
     const j=await apiCall(payload,30000);
     $("ovSending").classList.remove("show");
-    if(["access_required","access_invalid","access_expired"].includes(j.status)){state.sending=false;$("ovSending").classList.remove("show");requireRelogin(j.message);return;}
+    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){state.sending=false;$("ovSending").classList.remove("show");requireRelogin(j.message);return;}
     if(j.status==="wrong_pin"||j.status==="locked"){
       state.sending=false;clearPin();
       $("pinErr").textContent=j.status==="locked"?"Thiết bị bị khóa tạm thời. Thử lại sau "+Math.ceil((j.retryAfter||60)/60)+" phút.":"Mã PIN không đúng — nhập lại.";
@@ -1176,7 +1276,7 @@ function showDefiniteFail(j,extra){
 
 /* ==================== ACCESS SESSION — KHÔNG LƯU MẬT KHẨU ==================== */
 configureAccessOverlay();
-state.accessToken=readAccessToken();
+state.accessToken=readAccessToken(state.accessScope);
 $("btnAccess").onclick=async()=>{
   const v=$("accessPin").value.trim();
   if(!v){showAccessError("Nhập mật khẩu truy cập.");return;}
@@ -1185,12 +1285,12 @@ $("btnAccess").onclick=async()=>{
     const j=await loginAccess(v);
     if(j.status==="wrong_pin"||j.status==="locked"){showAccessError(j.status==="locked"?"Thiết bị bị khóa tạm thời. Thử lại sau "+Math.ceil((j.retryAfter||60)/60)+" phút.":"Mật khẩu truy cập không đúng.");return;}
     if(j.status!=="ok"||!j.accessToken){showAccessError(j.message||"Không tạo được phiên đăng nhập.");return;}
-    saveAccessToken(j.accessToken);$("ovAccess").classList.remove("show");await loadData();
+    saveAccessToken(j.accessToken,state.accessScope);$("ovAccess").classList.remove("show");await loadData();
   }catch(err){showAccessError(err&&err.message?err.message:"Không kết nối được backend.");}
   finally{$("btnAccess").disabled=false;$("btnAccess").textContent="Mở hệ thống";}
 };
 $("accessPin").addEventListener("keydown",e=>{if(e.key==="Enter")$("btnAccess").click();});
-$("btnLogout").onclick=()=>{clearAccessToken();location.reload();};
+$("btnLogout").onclick=()=>{clearAccessToken(state.accessScope);location.reload();};
 
 if(state.accessToken){$("ovAccess").classList.remove("show");loadData();}
 else{$("ovAccess").classList.add("show");}
