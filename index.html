@@ -28,8 +28,8 @@ header{background:var(--deep);color:var(--white);padding:14px;position:sticky;to
 .xe-hero .code{font-size:30px;font-weight:800;letter-spacing:1px;color:var(--safety)}
 .xe-hero .loai{font-size:13px;color:#AFC4BC;font-weight:600}
 
-.tabs{display:flex;background:#0D211D;border-radius:10px;padding:3px;margin-top:12px;gap:2px}
-.tabs button{flex:1;border:0;background:transparent;color:#93A8A0;font-family:inherit;font-weight:700;font-size:12.5px;padding:9px 2px;border-radius:8px;cursor:pointer;white-space:nowrap}
+.tabs{display:flex;flex-wrap:wrap;background:#0D211D;border-radius:10px;padding:3px;margin-top:12px;gap:2px}
+.tabs button{flex:1 1 calc(25% - 3px);border:0;background:transparent;color:#93A8A0;font-family:inherit;font-weight:700;font-size:12.5px;padding:9px 2px;border-radius:8px;cursor:pointer;white-space:nowrap}
 .tabs button.on{background:var(--safety);color:var(--deep)}
 
 .pane{display:none;padding-top:12px}
@@ -170,6 +170,20 @@ body.adjusting .fbox.slipbox .fbox-head{background:var(--danger)}
 .stock-row.low .ton{color:var(--danger)}
 .low-tag{display:inline-block;font-size:10.5px;font-weight:800;background:#FDE8E6;color:var(--danger);border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:middle}
 
+
+/* Checklist đầu ca + Vá vỏ */
+.check-grid{display:grid;grid-template-columns:1fr;gap:8px}
+.check-item{border:1.5px solid var(--line);border-radius:11px;padding:10px;background:var(--white)}
+.check-item .check-name{font-size:13px;font-weight:800;margin-bottom:7px}
+.check-seg{display:flex;gap:7px}.check-seg button{flex:1;border:1.5px solid var(--line);border-radius:9px;background:var(--white);padding:9px 4px;font-family:inherit;font-size:12px;font-weight:800;color:var(--muted)}
+.check-seg button.good.on{background:#E3F2E9;border-color:var(--ok);color:var(--ok)}
+.check-seg button.bad.on{background:#FDE8E6;border-color:var(--danger);color:var(--danger)}
+.checklist-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:8px 0}
+.checklist-mini{border:1px solid var(--line);border-radius:10px;background:var(--white);padding:9px;text-align:center}.checklist-mini b{display:block;font-size:20px;color:var(--deep-2)}.checklist-mini span{font-size:10px;font-weight:800;color:var(--muted)}
+.checklist-mini.bad{border-color:var(--danger);background:#FDF3F2}.checklist-mini.bad b{color:var(--danger)}
+.checklist-mini.warn{border-color:var(--safety);background:#FFF7EB}.checklist-mini.warn b{color:var(--safety-dark)}
+.shift-filter{display:flex;gap:6px;margin:7px 0}.shift-filter button{flex:1;border:1.5px solid var(--line);border-radius:9px;background:var(--white);padding:8px;font-family:inherit;font-size:12px;font-weight:800;color:var(--muted)}.shift-filter button.on{background:var(--deep-2);color:var(--white);border-color:var(--deep-2)}
+
 /* Bottom bar */
 .bar{position:fixed;bottom:0;left:0;right:0;background:var(--white);border-top:1px solid var(--line);padding:12px 14px calc(12px + env(safe-area-inset-bottom));z-index:40;display:none}
 .bar.show{display:block}
@@ -254,10 +268,12 @@ body.dash header .hd-inner{max-width:760px}
 .dash-live-alert.dead{background:#FDECEA;border-color:var(--danger)}
 .dash-live-alert.repair{background:#EAF6EF;border-color:var(--ok)}
 .dash-live-alert.maintenance{background:#EDF3FC;border-color:#2B4C8C}
+.dash-live-alert.checklist{background:#FDECEA;border-color:var(--danger)}
 .dash-live-alert .ttl{font-size:13px;font-weight:800;color:var(--deep)}
 .dash-live-alert.dead .ttl{color:var(--danger)}
 .dash-live-alert.repair .ttl{color:var(--ok)}
 .dash-live-alert.maintenance .ttl{color:#2B4C8C}
+.dash-live-alert.checklist .ttl{color:var(--danger)}
 .dash-live-alert .msg{font-size:12.5px;color:var(--ink);margin-top:2px;overflow-wrap:anywhere}
 .dash-live-alert .meta{font-size:11px;color:var(--muted);margin-top:3px}
 
@@ -346,13 +362,14 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.21-RC2.4.9A-MULTI-XUAT";
+const APP_VERSION = "2026.07.21-RC2.4.9B-CHECKLIST-VAVO";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
 // Khi render tab, $("main") trỏ vào pane đang hoạt động; ngoài quá trình render vẫn trỏ root thật.
 const $ = id => (id === "main" && window.__ktvtActivePane) ? window.__ktvtActivePane : document.getElementById(id);
 const params = new URLSearchParams(location.search);
+const START_TAB=(params.get("tab")||"").toLowerCase();
 const XE = (params.get("xe") || "").toUpperCase().trim();
 const DASH = (params.get("view") || "").toLowerCase() === "tong";
 const MODE = DASH ? "dash" : (XE ? "xe" : "kho");
@@ -537,7 +554,7 @@ function configureAccessOverlay(){
   }else{
     $("accessTitle").textContent="Mở hồ sơ phương tiện "+XE;
     $("accessLabel").textContent="Mật khẩu QR phương tiện";
-    $("accessDesc").textContent="Sau khi đăng nhập, giữ nguyên đầy đủ Hồ sơ, Báo hỏng, Sửa chữa và Bảo dưỡng của "+XE+". Mật khẩu này không mở được Bảng tổng.";
+    $("accessDesc").textContent="Sau khi đăng nhập, có thể dùng Hồ sơ, Báo hỏng, Sửa chữa, Bảo dưỡng, Checklist và Vá vỏ theo phạm vi của "+XE+". Mật khẩu này không mở được Bảng tổng.";
   }
 }
 function showAccessError(msg){
@@ -559,14 +576,14 @@ function stopDashRefresh(){
   state.dashAlertQueue=[];
   state.dashAlertActive=false;
   const liveBox=document.getElementById("dashLiveAlert");
-  if(liveBox) liveBox.classList.remove("show","dead","repair","maintenance");
+  if(liveBox) liveBox.classList.remove("show","dead","repair","maintenance","checklist");
   state.refreshing=false;
   state.polling=false;
 }
 function queueDashLiveAlert(event){
   if(MODE!=="dash" || !event) return;
   const type=String(event.type||"").toUpperCase();
-  if(!["BAO_HONG","SUA_CHUA","BAO_DUONG"].includes(type)) return;
+  if(!["BAO_HONG","SUA_CHUA","BAO_DUONG","CHECKLIST_DAU_CA"].includes(type)) return;
   const seq=Number(event.eventSeq||0);
   if(seq && seq<=state.lastDashAlertSeq) return;
   if(seq) state.lastDashAlertSeq=seq;
@@ -583,7 +600,7 @@ function showNextDashLiveAlert(){
   const dead=type==="BAO_HONG" && /chết/i.test(event.tinhTrang||"");
   let title="",msg="",meta=[],duration=7000,vibration=[120];
 
-  box.classList.remove("dead","repair","maintenance");
+  box.classList.remove("dead","repair","maintenance","checklist");
   if(type==="BAO_HONG"){
     if(dead) box.classList.add("dead");
     title=(dead?"🔴 XE CHẾT MÁY":"🚨 BÁO HỎNG MỚI")+" — "+(event.maXe||"");
@@ -598,6 +615,13 @@ function showNextDashLiveAlert(){
     meta=[event.nguoi?"Người sửa: "+event.nguoi:"",event.repairId||event.txnId||"",event.ts||""];
     duration=8000;
     vibration=[100,70,100];
+  }else if(type==="CHECKLIST_DAU_CA"){
+    box.classList.add("checklist");
+    title="⚠️ CHECKLIST KHÔNG ĐẠT — "+(event.maXe||"");
+    msg=((event.failedItems||[]).join(", ")||"Có hạng mục không đạt")+(event.ghiChu?" · "+event.ghiChu:"");
+    meta=[event.shift?shiftLabel(event.shift):"",event.nguoi?"Người kiểm tra: "+event.nguoi:"",event.txnId||"",event.ts||""];
+    duration=12000;
+    vibration=[220,100,220];
   }else{
     box.classList.add("maintenance");
     title="🛠 ĐÃ GHI BẢO DƯỠNG — "+(event.maXe||"");
@@ -714,7 +738,7 @@ async function pollDashboardEvents(){
     const events=Array.isArray(j.events)?j.events:[];
     state.lastDashPollSeq=Math.max(sinceSeq,Number(j.latestSeq||0));
     events
-      .filter(e=>e&&["BAO_HONG","SUA_CHUA","BAO_DUONG"].includes(String(e.type||"").toUpperCase()))
+      .filter(e=>e&&["BAO_HONG","SUA_CHUA","BAO_DUONG","CHECKLIST_DAU_CA"].includes(String(e.type||"").toUpperCase()))
       .sort((a,b)=>Number(a.eventSeq||0)-Number(b.eventSeq||0))
       .forEach(queueDashLiveAlert);
 
@@ -736,11 +760,12 @@ function unreadNotifications(){
 }
 function notificationTypeLabel(type){
   const t=String(type||"").toUpperCase();
-  return {BAO_HONG:"🚨 BÁO HỎNG",SUA_CHUA:"🔧 SỬA CHỮA",BAO_DUONG:"🛠 BẢO DƯỠNG",XUAT:"📤 XUẤT KHO",NHAP:"📥 NHẬP KHO",DE_XUAT:"📋 ĐỀ XUẤT"}[t]||t;
+  return {BAO_HONG:"🚨 BÁO HỎNG",SUA_CHUA:"🔧 SỬA CHỮA",BAO_DUONG:"🛠 BẢO DƯỠNG",CHECKLIST_DAU_CA:"⚠️ CHECKLIST",VA_VO:"🛞 VÁ VỎ",XUAT:"📤 XUẤT KHO",NHAP:"📥 NHẬP KHO",DE_XUAT:"📋 ĐỀ XUẤT"}[t]||t;
 }
-function notificationUrgent(n){ return String(n.type||"").toUpperCase()==="BAO_HONG" && /chết/i.test((n.title||"")+" "+(n.summary||"")); }
+function notificationUrgent(n){const t=String(n.type||"").toUpperCase();return (t==="BAO_HONG"&&/chết/i.test((n.title||"")+" "+(n.summary||"")))||t==="CHECKLIST_DAU_CA";}
 function notificationRowHTML(n, compact=false){
-  const link=n.maXe?(location.origin+location.pathname+'?xe='+encodeURIComponent(n.maXe)):"";
+  const directTab=String(n.type||"").toUpperCase()==="CHECKLIST_DAU_CA"?"&tab=baohong":"";
+  const link=n.maXe?(location.origin+location.pathname+'?xe='+encodeURIComponent(n.maXe)+directTab):"";
   return '<div class="notif-row'+(notificationUrgent(n)?' urgent':'')+'" data-notif-row="'+esc(n.notificationId)+'">'
     +'<div class="nt">'+notificationTypeLabel(n.type)+(n.maXe?' — '+esc(n.maXe):'')+'</div>'
     +'<div class="ns">'+esc(n.title||"")+(n.summary?' · '+esc(n.summary):'')+'</div>'
@@ -776,6 +801,15 @@ async function markNotificationsSeen(ids, markAll){
 document.getElementById('btnNotifClose').onclick=()=>document.getElementById('ovNotifications').classList.remove('show');
 document.getElementById('btnNotifMarkAll').onclick=()=>markNotificationsSeen([],true);
 
+
+function checklistGroupForVehicle(x){
+  if(!x)return "";if(["CK01","CK02"].includes(String(x.ma||"").toUpperCase()))return "GANTRY";
+  const n=stripAccent(x.loai||"");return (n.includes("xe nang hang")||n.includes("xe nang rong")||n.includes("dau keo")||n.includes("cau sumitomo"))?"MOBILE":"";
+}
+function tirePatchApplicable(x){const n=stripAccent((x&&x.loai)||"");return n.includes("xe nang hang")||n.includes("xe nang rong")||n.includes("dau keo");}
+function shiftLabel(s){return String(s||"").replace("CA_","Ca ");}
+function checklistResultLabel(v){return v==="DAT"?"Đạt":(v==="KHONG_DAT"?"Không đạt":(v==="DA_VE_SINH"?"Đã vệ sinh":(v==="CHUA_VE_SINH"?"Chưa vệ sinh":"")));}
+
 function initUI(){
   const d = state.data;
   if(MODE === "dash"){
@@ -799,9 +833,10 @@ function initUI(){
     $("xeHero").style.display = "flex";
     $("xeCode").textContent = xe.ma;
     $("xeLoai").textContent = xe.loai + (xe.ten ? " · " + xe.ten : "");
-    const xeTabs=[["hoso","📋 Hồ sơ"],["baohong","🚨 Báo hỏng"],["suachua","🔧 Sửa chữa"]];
+    const xeTabs=[["hoso","📋 Hồ sơ"],["baohong","🚨 Báo hỏng"],["suachua","🔧 Sửa chữa"],["baoduong","🛠 Bảo dưỡng"]];
+    if(checklistGroupForVehicle(xe)) xeTabs.push(["checklist","☑ Checklist"]);
+    if(tirePatchApplicable(xe)) xeTabs.push(["vavo","🛞 Vá vỏ"]);
     if(state.accessScope==="DASHBOARD") xeTabs.push(["qc","✅ QC"]);
-    xeTabs.push(["baoduong","🛠 Bảo dưỡng"]);
     buildTabs(xeTabs);
   }else{
     $("hdSub").innerHTML = "Kho vật tư sửa chữa" + navHTML("kho");
@@ -811,17 +846,18 @@ function initUI(){
 
 function buildTabs(list){
   const t=$("tabs");t.innerHTML="";resetTabPanes();
-  list.forEach(([id,label],i)=>{
-    const b=document.createElement("button");b.textContent=label;b.className=i===0?"on":"";
+  const initial=list.some(x=>x[0]===START_TAB)?START_TAB:list[0][0];
+  list.forEach(([id,label])=>{
+    const b=document.createElement("button");b.textContent=label;b.className=id===initial?"on":"";
     b.onclick=()=>{t.querySelectorAll("button").forEach(x=>x.classList.remove("on"));b.classList.add("on");openTab(id);};
     t.appendChild(b);
   });
-  openTab(list[0][0]);
+  openTab(initial);
 }
 
 function openTab(id){
   state.tab=id;state.slip={};state.slipKind=null;state.xuatCategories={};state.xuatVehicles={};state.xuatAlloc={};document.body.classList.remove("adjusting");$("bar").classList.remove("show");
-  const fn={hoso:renderHoSo,baohong:renderBaoHong,suachua:renderSuaChua,baoduong:renderBaoDuong,ton:renderTon,xuat:renderXuat,nhap:renderNhap,dexuat:renderDeXuat,lichsu:renderLichSu,qc:renderQC}[id];
+  const fn={hoso:renderHoSo,baohong:renderBaoHong,suachua:renderSuaChua,baoduong:renderBaoDuong,checklist:renderChecklist,vavo:renderVaVo,ton:renderTon,xuat:renderXuat,nhap:renderNhap,dexuat:renderDeXuat,lichsu:renderLichSu,qc:renderQC}[id];
   if(!fn) return;
 
   // Form nhập liệu luôn render mới để không giữ nhầm dữ liệu cũ. Chỉ cache các tab đọc nặng.
@@ -907,6 +943,12 @@ function renderHoSo(){
         +'<div class="sub">Ngày '+esc(r.ngay)+' · '+esc(r.nguoi)+(r.maBH?' · sự cố '+esc(r.maBH):'')+'</div></div>';
     });
   }
+
+
+  const clHist=(d.history.CHECKLIST||[]).filter(r=>r.maXe===XE).slice(0,6);
+  if(clHist.length){html+='<div class="sec-t">CHECKLIST ĐẦU CA GẦN NHẤT</div>'+clHist.map(r=>'<div class="hist-row'+(r.result==="KHONG_DAT"?' neg':'')+'"><div class="top"><span><span class="hist-tag '+(r.result==="KHONG_DAT"?'bh':'sc')+'">'+(r.result==="KHONG_DAT"?'KHÔNG ĐẠT':'ĐẠT')+'</span>'+esc(shiftLabel(r.shift))+'</span><b>'+esc(r.ngay)+'</b></div><div class="sub">'+esc(r.nguoi)+(r.failedLabels&&r.failedLabels.length?' · '+esc(r.failedLabels.join(', ')):'')+(r.note?' · '+esc(r.note):'')+'</div></div>').join('');}
+  const vvHist=(d.history.VA_VO||[]).filter(r=>r.maXe===XE).slice(0,6);
+  if(vvHist.length){html+='<div class="sec-t">LỊCH SỬ VÁ VỎ GẦN NHẤT</div>'+vvHist.map(r=>'<div class="hist-row"><div class="top"><span><span class="hist-tag d">VÁ VỎ</span>'+esc(r.noiDung)+'</span><b>'+esc(r.ngay)+'</b></div><div class="sub">Tài xế '+esc(r.taiXe)+(r.ghiChu?' · '+esc(r.ghiChu):'')+' · '+esc(r.txnId||'')+'</div></div>').join('');}
 
   html += '<div class="sec-t">HẠN BẢO DƯỠNG (cập nhật ' + esc(d.updated) + ')</div>';
   if(!hm.length) html += '<div class="empty-note">Chưa khai báo hạng mục bảo dưỡng cho phương tiện này.</div>';
@@ -1253,6 +1295,49 @@ function renderQC(){
   };
 }
 
+
+/* ==================== CHECKLIST ĐẦU CA ==================== */
+function renderChecklist(){
+  const xe=state.data.xe.find(x=>x.ma===XE),group=checklistGroupForVehicle(xe);
+  if(!group){$("main").innerHTML='<div class="empty-note">Phương tiện này không áp dụng checklist đầu ca.</div>';return;}
+  const mobile=[['nuocMay','Nước máy','Đạt','Không đạt'],['nhotHopSo','Nhớt hộp số','Đạt','Không đạt'],['nhotThuyLuc','Nhớt thủy lực','Đạt','Không đạt'],['nhotMay','Nhớt máy','Đạt','Không đạt'],['boE','Bô e','Đã vệ sinh','Chưa vệ sinh'],['binhChuaChay','Bình chữa cháy','Đạt','Không đạt']];
+  const gantry=[['nhaToi','Nhà tời','Đạt','Không đạt'],['heThongChanChay','Hệ thống chân chạy','Đạt','Không đạt'],['binhChuaChay','Bình chữa cháy','Đạt','Không đạt'],['heThongMang','Hệ thống máng','Đạt','Không đạt']];
+  const fields=group==='GANTRY'?gantry:mobile,results={};
+  const people=(state.data.taixe||[]).map(t=>'<option value="'+esc(t)+'">').join('');
+  $("main").innerHTML='<div class="warn-note">Checklist theo <b>Ngày + Ca + Mã xe</b>. Gửi lại cùng ngày/ca sẽ tạo bản ghi mới thay thế, lịch sử cũ vẫn giữ trong Google Sheet.</div>'
+    +'<div class="fbox"><div class="fbox-head"><span>CHECKLIST ĐẦU CA — '+esc(XE)+'</span></div>'
+    +'<div class="frow"><label>Ngày</label><input type="date" id="clNgay" value="'+todayISO()+'"></div>'
+    +'<div class="frow"><label>Ca</label><select id="clShift"><option value="CA_1">Ca 1</option><option value="CA_2">Ca 2</option><option value="CA_3">Ca 3</option></select></div>'
+    +'<div class="frow"><label>Người kiểm tra</label><input type="text" id="clNguoi" list="clPeople" placeholder="Gõ tên"><datalist id="clPeople">'+people+'</datalist></div>'
+    +'<div class="frow"><div class="check-grid" id="clItems">'+fields.map(a=>'<div class="check-item" data-cl-key="'+a[0]+'"><div class="check-name">'+a[1]+'</div><div class="check-seg"><button type="button" class="good" data-v="'+(a[0]==='boE'?'DA_VE_SINH':'DAT')+'">'+a[2]+'</button><button type="button" class="bad" data-v="'+(a[0]==='boE'?'CHUA_VE_SINH':'KHONG_DAT')+'">'+a[3]+'</button></div></div>').join('')+'</div></div>'
+    +'<div class="frow"><label>Ghi chú <span style="font-weight:400;color:var(--muted)">(bắt buộc khi có mục không đạt/chưa vệ sinh)</span></label><textarea id="clNote" placeholder="Ghi rõ vị trí, hiện tượng và xử lý tạm thời nếu có"></textarea></div></div>';
+  document.querySelectorAll('[data-cl-key]').forEach(card=>card.querySelectorAll('button').forEach(btn=>btn.onclick=()=>{results[card.dataset.clKey]=btn.dataset.v;card.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===btn));}));
+  $("bar").classList.add("show");$("barSum").innerHTML='<b>'+fields.length+' hạng mục kiểm tra</b>';const btn=$("btnSend");btn.textContent='Gửi checklist';btn.disabled=false;
+  btn.onclick=()=>{
+    for(const a of fields){if(!results[a[0]]){alert('Chưa chọn kết quả: '+a[1]);return;}}
+    const bad=Object.values(results).some(v=>v==='KHONG_DAT'||v==='CHUA_VE_SINH'),nguoi=$("clNguoi").value.trim(),note=$("clNote").value.trim();
+    if(!nguoi){alert('Ghi người kiểm tra.');return;}if(bad&&!note){alert('Có mục không đạt/chưa vệ sinh; bắt buộc ghi chú.');return;}
+    const ngay=requireDateVN('clNgay');if(!ngay)return;
+    const badLabels=fields.filter(a=>results[a[0]]==='KHONG_DAT'||results[a[0]]==='CHUA_VE_SINH').map(a=>a[1]);
+    openConfirm({title:'Xác nhận CHECKLIST — '+XE,summary:'Ca: <b>'+esc(shiftLabel($("clShift").value))+'</b><br>Kết quả: <b>'+(bad?'KHÔNG ĐẠT':'ĐẠT')+'</b>'+(badLabels.length?'<br>Không đạt: '+esc(badLabels.join(', ')):'')+(note?'<br>Ghi chú: '+esc(note):''),needPin:null,payload:{type:'CHECKLIST_DAU_CA',maXe:XE,shift:$("clShift").value,nguoi:nguoi,note:note,results:results,date:ngay,isAdjustment:false},doneMsg:j=>j.message||'Đã ghi checklist.',after:()=>loadData()});
+  };
+}
+
+/* ==================== VÁ VỎ ==================== */
+function renderVaVo(){
+  const xe=state.data.xe.find(x=>x.ma===XE);if(!tirePatchApplicable(xe)){$("main").innerHTML='<div class="empty-note">Vá vỏ chỉ áp dụng cho xe nâng hàng, xe nâng rỗng và đầu kéo.</div>';return;}
+  const people=(state.data.taixe||[]).map(t=>'<option value="'+esc(t)+'">').join('');
+  const hist=(state.data.history.VA_VO||[]).filter(r=>r.maXe===XE).slice(0,20);
+  $("main").innerHTML='<div class="fbox"><div class="fbox-head"><span>GHI NHẬN VÁ VỎ — '+esc(XE)+'</span></div>'
+    +'<div class="frow"><label>Ngày</label><input type="date" id="vvNgay" value="'+todayISO()+'"></div>'
+    +'<div class="frow"><label>Tài xế</label><input type="text" id="vvTaiXe" list="vvPeople" placeholder="Gõ tên tài xế"><datalist id="vvPeople">'+people+'</datalist></div>'
+    +'<div class="frow"><label>Nội dung</label><textarea id="vvNoiDung" placeholder="Vd: vá bánh trước trái, xử lý lỗ đinh..."></textarea></div>'
+    +'<div class="frow"><label>Ghi chú</label><textarea id="vvNote" placeholder="Thông tin bổ sung (không bắt buộc)"></textarea></div></div>'
+    +'<div class="sec-t">LỊCH SỬ GẦN NHẤT</div>'+(hist.length?hist.map(r=>'<div class="hist-row"><div class="top"><span><span class="hist-tag d">VÁ VỎ</span>'+esc(r.noiDung)+'</span><b>'+esc(r.ngay)+'</b></div><div class="sub">'+esc(r.taiXe)+(r.ghiChu?' · '+esc(r.ghiChu):'')+' · '+esc(r.txnId||'')+'</div></div>').join(''):'<div class="empty-note">Chưa có ghi nhận vá vỏ.</div>');
+  $("bar").classList.add("show");$("barSum").innerHTML='<b>Ghi lịch sử vá vỏ</b>';const btn=$("btnSend");btn.textContent='Gửi ghi nhận';btn.disabled=false;
+  btn.onclick=()=>{const taiXe=$("vvTaiXe").value.trim(),noiDung=$("vvNoiDung").value.trim(),note=$("vvNote").value.trim();if(!taiXe){alert('Ghi tên tài xế.');return;}if(!noiDung){alert('Ghi nội dung vá vỏ.');return;}const ngay=requireDateVN('vvNgay');if(!ngay)return;openConfirm({title:'Xác nhận VÁ VỎ — '+XE,summary:'Tài xế: <b>'+esc(taiXe)+'</b><br>Nội dung: '+esc(noiDung)+(note?'<br>Ghi chú: '+esc(note):''),needPin:null,payload:{type:'VA_VO',maXe:XE,taiXe:taiXe,nguoi:taiXe,noiDung:noiDung,note:note,date:ngay,isAdjustment:false},doneMsg:j=>'Đã ghi vá vỏ '+(j.patchId||j.txnId||'')+'.',after:()=>loadData()});};
+}
+
 /* ==================== BẢO DƯỠNG (PIN_BINH) ==================== */
 function renderBaoDuong(){
   const hm = state.data.hangmuc.filter(h=>h.maXe===XE);
@@ -1519,6 +1604,10 @@ function renderDash(){
   const deadXe={},warnXe={},oldestXe={};open.forEach(o=>{if(o.dead)deadXe[o.maXe]=true;else warnXe[o.maXe]=true;if(oldestXe[o.maXe]==null||o.age>oldestXe[o.maXe])oldestXe[o.maXe]=o.age;});
   const lich=d.hangmuc.filter(h=>h.loai!=="GIO"&&!h.noBase),over=lich.filter(h=>h.overdue).sort((a,b)=>a.daysLeft-b.daysLeft),soon=lich.filter(h=>!h.overdue&&h.daysLeft<=7).sort((a,b)=>a.daysLeft-b.daysLeft),gio=d.hangmuc.filter(h=>h.loai==="GIO"),low=d.stock.filter(r=>r.min>0&&r.ton<=r.min);
   const kdAll=(d.inspection||[]),kdOver=kdAll.filter(r=>r.status==="OVERDUE").sort((a,b)=>a.daysLeft-b.daysLeft),kdSoon=kdAll.filter(r=>r.status==="SOON").sort((a,b)=>a.daysLeft-b.daysLeft),kdMissing=kdAll.filter(r=>r.status==="NO_DATA"),kdValid=kdAll.filter(r=>r.status==="VALID");
+  const checklistVehicles=d.xe.filter(x=>!!checklistGroupForVehicle(x));
+  const checklistRows=(d.checklistToday||[]);
+  const vavoRecent=(d.history.VA_VO||[]).slice(0,20);
+  let dashShift=sessionStorage.getItem('ktvt_dash_shift')||'CA_1';if(!['CA_1','CA_2','CA_3'].includes(dashShift))dashShift='CA_1';
 
   const acts=[];
   d.history.BAO_HONG.forEach(r=>acts.push({t:"bh",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag bh">BÁO HỎNG</span>',top:esc(r.maXe)+" · "+esc(r.tinhTrang),sub:esc(r.nguoi)+" · "+esc(r.moTa)+" · "+esc(r.txnId||"")}));
@@ -1529,6 +1618,8 @@ function renderDash(){
   d.history.BAO_DUONG.forEach(r=>acts.push({t:"bd",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag bd">BẢO DƯỠNG</span>',top:esc(r.maXe)+" · "+esc(r.hangMuc),sub:(r.soGio!=null?r.soGio+"h · ":"")+esc(r.nguoi)+" · "+esc(r.txnId||"")}));
   d.history.DE_XUAT.forEach(r=>acts.push({t:"d",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag d">ĐỀ XUẤT</span>',top:esc(r.vt)+" — "+r.sl+" "+esc(r.dvt),sub:esc(r.nguoi)+" · "+esc(r.txnId||"")}));
   (d.history.KIEM_DINH||[]).forEach(r=>acts.push({t:"kd",ts:r.ts,ngay:r.inspectionDate,tag:'<span class="hist-tag d">KIỂM ĐỊNH</span>',top:esc(r.maXe)+" · hạn "+esc(r.nextInspectionDate||""),sub:esc(r.updatedBy||"")+" · "+esc(r.inspectionOrg||"")+" · "+esc(r.txnId||"")}));
+  (d.history.CHECKLIST||[]).forEach(r=>acts.push({t:"cl",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag '+(r.result==="KHONG_DAT"?'bh':'sc')+'">CHECKLIST</span>',top:esc(r.maXe)+" · "+esc(shiftLabel(r.shift))+" · "+(r.result==="KHONG_DAT"?"KHÔNG ĐẠT":"ĐẠT"),sub:esc(r.nguoi)+(r.failedLabels&&r.failedLabels.length?' · '+esc(r.failedLabels.join(', ')):'')+' · '+esc(r.txnId||''),neg:r.result==="KHONG_DAT"}));
+  (d.history.VA_VO||[]).forEach(r=>acts.push({t:"vv",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag d">VÁ VỎ</span>',top:esc(r.maXe)+" · "+esc(r.noiDung),sub:esc(r.taiXe)+(r.ghiChu?' · '+esc(r.ghiChu):'')+' · '+esc(r.txnId||'')}));
   acts.sort((a,b)=>sortKey(b)>sortKey(a)?1:-1);state.dashActs=acts;const todayCount=acts.filter(a=>a.ngay===todayVN).length;
 
   const base=location.origin+location.pathname;
@@ -1562,6 +1653,17 @@ function renderDash(){
   kdSoon.forEach(r=>{html+='<div class="inspection-card soon"><div class="inspection-head"><div class="inspection-title"><a href="'+base+'?xe='+encodeURIComponent(r.maXe)+'" style="color:inherit;text-decoration:none">'+esc(r.maXe)+'</a></div><span class="inspection-status">SẮP HẾT HẠN</span></div><div class="inspection-main">Hạn kiểm định <b>'+esc(r.nextInspectionDate)+'</b> — còn '+Number(r.daysLeft||0)+' ngày</div><div class="inspection-meta">'+esc(r.inspectionOrg||"")+(r.certificateNo?' · '+esc(r.certificateNo):'')+'</div></div>';});
   if(kdMissing.length){html+='<div class="hist-row"><div class="top"><span><span class="hist-tag d">CHƯA CÓ KĐ</span>'+kdMissing.map(r=>'<a href="'+base+'?xe='+encodeURIComponent(r.maXe)+'" style="color:var(--deep-2);margin-right:8px">'+esc(r.maXe)+'</a>').join("")+'</span></div><div class="sub">Anh Bình mở hồ sơ từng xe để cập nhật kiểm định.</div></div>';}
 
+
+  const clShiftRows=checklistRows.filter(r=>r.shift===dashShift),clMap=Object.fromEntries(clShiftRows.map(r=>[r.maXe,r])),clBad=clShiftRows.filter(r=>r.result==='KHONG_DAT'),clMissing=checklistVehicles.filter(x=>!clMap[x.ma]);
+  html+='<div class="sec-t">CHECKLIST ĐẦU CA — HÔM NAY</div><div class="shift-filter"><button data-dshift="CA_1" class="'+(dashShift==='CA_1'?'on':'')+'">Ca 1</button><button data-dshift="CA_2" class="'+(dashShift==='CA_2'?'on':'')+'">Ca 2</button><button data-dshift="CA_3" class="'+(dashShift==='CA_3'?'on':'')+'">Ca 3</button></div>'
+    +'<div class="checklist-summary"><div class="checklist-mini"><b>'+clShiftRows.length+'/'+checklistVehicles.length+'</b><span>ĐÃ KIỂM</span></div><div class="checklist-mini warn"><b>'+clMissing.length+'</b><span>CHƯA KIỂM</span></div><div class="checklist-mini bad"><b>'+clBad.length+'</b><span>KHÔNG ĐẠT</span></div></div>';
+  clBad.forEach(r=>{html+='<div class="hist-row neg"><div class="top"><span><span class="hist-tag bh">KHÔNG ĐẠT</span><b>'+esc(r.maXe)+'</b> — '+esc(shiftLabel(r.shift))+'</span><b>'+esc(r.ngay)+'</b></div><div class="sub">'+esc((r.failedLabels||[]).join(', '))+(r.note?' · '+esc(r.note):'')+' · '+esc(r.nguoi)+'</div><div class="notif-actions"><a href="'+base+'?xe='+encodeURIComponent(r.maXe)+'&tab=baohong">Tạo báo hỏng</a></div></div>';});
+  if(clMissing.length)html+='<div class="hist-row"><div class="top"><span><span class="hist-tag d">CHƯA KIỂM</span>'+clMissing.map(x=>'<a href="'+base+'?xe='+encodeURIComponent(x.ma)+'" style="color:var(--deep-2);margin-right:8px">'+esc(x.ma)+'</a>').join('')+'</span></div><div class="sub">Chưa có checklist '+esc(shiftLabel(dashShift))+' hôm nay.</div></div>';
+
+  html+='<div class="sec-t">VÁ VỎ GẦN ĐÂY</div>';
+  if(!vavoRecent.length)html+='<div class="empty-note">Chưa có ghi nhận vá vỏ.</div>';
+  vavoRecent.slice(0,10).forEach(r=>{html+='<div class="hist-row"><div class="top"><span><span class="hist-tag d">VÁ VỎ</span><b>'+esc(r.maXe)+'</b> — '+esc(r.noiDung)+'</span><b>'+esc(r.ngay)+'</b></div><div class="sub">Tài xế '+esc(r.taiXe)+(r.ghiChu?' · '+esc(r.ghiChu):'')+' · '+esc(r.txnId||'')+'</div></div>';});
+
   html+='<div class="sec-t">SỰ CỐ ĐANG MỞ ('+open.length+')</div>';
   if(!open.length)html+='<div class="empty-note">Không có sự cố mở.</div>';
   open.forEach(o=>{html+='<div class="hist-row'+(o.dead?' neg':'')+'"><div class="top"><span><span class="hist-tag bh">'+(o.dead?'CHẾT MÁY':'MỞ')+'</span><b>'+esc(o.maXe)+'</b> — '+esc(o.moTa)+'</span><b>'+o.age+' ngày</b></div><div class="sub">'+esc(o.ngay)+' · '+esc(o.nguoi)+' · '+esc(o.maBH)+'</div></div>';});
@@ -1581,9 +1683,10 @@ function renderDash(){
   gio.forEach(h=>{html+='<tr><td><b>'+esc(h.maXe)+'</b></td><td>'+esc(h.hangMuc)+'</td>'+(h.noBase?'<td colspan="2"><span class="tag nobase">CHƯA CÓ MỐC</span></td>':'<td>'+h.lastGio+'h'+(h.lastNgay?' ('+esc(h.lastNgay)+')':'')+'</td><td><b>'+h.nextGio+'h</b></td>')+'</tr>';});html+='</table>';
   if(low.length){html+='<div class="sec-t">VẬT TƯ DƯỚI NGƯỠNG ('+low.length+')</div>';low.forEach(r=>{html+='<div class="stock-row low"><div><div class="nm">'+esc(r.ten)+'</div><div class="cd">'+esc(r.ma)+' · Min '+r.min+'</div></div><div class="ton">'+r.ton+' <small>'+esc(r.dvt)+'</small></div></div>';});}
 
-  html+='<div class="sec-t">NHẬT KÝ HOẠT ĐỘNG — hôm nay '+todayCount+' phiếu</div><div class="chips" id="daChips"><button data-t="all">Tất cả</button><button data-t="bh">Báo hỏng</button><button data-t="x">Xuất</button><button data-t="sc">Sửa chữa</button><button data-t="qc">QC</button><button data-t="n">Nhập</button><button data-t="bd">Bảo dưỡng</button><button data-t="kd">Kiểm định</button><button data-t="d">Đề xuất</button></div>'
+  html+='<div class="sec-t">NHẬT KÝ HOẠT ĐỘNG — hôm nay '+todayCount+' phiếu</div><div class="chips" id="daChips"><button data-t="all">Tất cả</button><button data-t="bh">Báo hỏng</button><button data-t="x">Xuất</button><button data-t="sc">Sửa chữa</button><button data-t="qc">QC</button><button data-t="n">Nhập</button><button data-t="bd">Bảo dưỡng</button><button data-t="cl">Checklist</button><button data-t="vv">Vá vỏ</button><button data-t="kd">Kiểm định</button><button data-t="d">Đề xuất</button></div>'
     +'<div class="search-box" style="display:flex;gap:8px;padding-top:0"><input type="date" id="daDate" style="flex:1;border:2px solid var(--line);border-radius:12px;padding:10px 12px;font-family:inherit;font-size:15px;background:var(--white)"><button id="daDateAll" class="seen-btn">Mọi ngày</button></div><div class="hint">Không lọc ngày: 50 dòng gần nhất.</div><div id="daList"></div>';
   $("main").innerHTML=html;
+  document.querySelectorAll('[data-dshift]').forEach(btn=>btn.onclick=()=>{sessionStorage.setItem('ktvt_dash_shift',btn.dataset.dshift);renderDash();});
   document.querySelectorAll("#daChips button").forEach(b=>{b.classList.toggle("on",b.dataset.t===state.daType);b.onclick=()=>{state.daType=b.dataset.t;document.querySelectorAll("#daChips button").forEach(x=>x.classList.toggle("on",x===b));renderDaList();};});
   if(state.daDate)$("daDate").value=state.daDate;$("daDate").addEventListener("change",()=>{state.daDate=$("daDate").value;renderDaList();});$("daDateAll").onclick=()=>{state.daDate="";$("daDate").value="";renderDaList();};
   function renderDaList(){let list=state.dashActs.filter(a=>state.daType==="all"||a.t===state.daType);const df=$("daDate").value;if(df)list=list.filter(a=>a.ngay===isoToVN(df));else list=list.slice(0,50);const box=$("daList");box.innerHTML="";if(!list.length){box.innerHTML='<div class="empty-note">Không có phiếu khớp bộ lọc.</div>';return;}list.forEach(a=>box.insertAdjacentHTML("beforeend",'<div class="hist-row'+(a.neg?' neg':'')+'"><div class="top"><span>'+a.tag+a.top+'</span><b>'+esc(a.ngay)+'</b></div><div class="sub">Gửi '+esc(a.ts)+' · '+a.sub+'</div></div>'));}
