@@ -206,6 +206,22 @@ body.dash header .hd-inner{max-width:760px}
 .dash-note{font-size:11.5px;color:var(--muted);margin:4px 0 0}
 .seen-btn{border:1.5px solid var(--line);border-radius:10px;background:var(--white);font-family:inherit;font-weight:700;font-size:12.5px;padding:8px 13px;cursor:pointer;color:var(--deep-2)}
 
+/* Hộp phiếu mới Dashboard RC2.4.8 */
+.notif-box{background:var(--white);border:2px solid var(--safety);border-radius:14px;padding:10px 12px;margin:10px 0 12px;box-shadow:0 2px 8px rgba(208,115,10,.12)}
+.notif-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:7px}
+.notif-head b{font-size:14px;color:var(--deep-2)}
+.notif-link{border:0;background:transparent;color:var(--safety-dark);font-family:inherit;font-weight:800;font-size:12px;cursor:pointer}
+.notif-row{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-top:7px}
+.notif-row.urgent{border-color:var(--danger);background:#FDF3F2}
+.notif-row .nt{font-size:13px;font-weight:800;color:var(--deep-2)}
+.notif-row .ns{font-size:12px;color:var(--ink);margin-top:3px;overflow-wrap:anywhere}
+.notif-row .nm{font-size:11px;color:var(--muted);margin-top:3px}
+.notif-actions{display:flex;gap:7px;margin-top:7px;flex-wrap:wrap}
+.notif-actions button,.notif-actions a{border:1px solid var(--line);border-radius:8px;background:var(--white);color:var(--deep-2);font-family:inherit;font-size:11px;font-weight:800;padding:6px 9px;text-decoration:none;cursor:pointer}
+.notif-count{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;border-radius:20px;background:var(--danger);color:var(--white);font-size:11px;font-weight:800;padding:0 6px}
+.notif-list{text-align:left;max-height:58vh;overflow:auto;margin:8px 0 14px}
+.notif-list .notif-row{background:var(--white)}
+
 /* Performance patch RC2.4.3 */
 .perf-pane{display:none}
 .perf-pane.on{display:block}
@@ -298,10 +314,20 @@ body.dash header .hd-inner{max-width:760px}
   </div>
 </div>
 
+<div class="overlay" id="ovNotifications">
+  <div class="card">
+    <h2>🔔 Phiếu mới</h2>
+    <p id="notifOverlayDesc">Các phiếu chưa xem được lưu và đồng bộ từ Google Sheet.</p>
+    <div class="notif-list" id="notifOverlayList"></div>
+    <button class="primary" id="btnNotifMarkAll">Đánh dấu tất cả đã xem</button>
+    <button id="btnNotifClose" style="width:100%;margin-top:8px;background:var(--paper);color:var(--deep-2)">Đóng</button>
+  </div>
+</div>
+
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.21-RC2.4.7-INSPECTION";
+const APP_VERSION = "2026.07.21-RC2.4.8-STABILITY-UX";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -330,14 +356,14 @@ const state = {
   data:null, tab:null, slip:{}, slipKind:null, pending:null,
   accessToken:"", accessScope:INITIAL_ACCESS_SCOPE, clientId:"", versionOk:false, sending:false,
   dashTimer:null, dashSafetyTimer:null, dashAlertTimer:null, daType:"all", daDate:"", refreshing:false, polling:false,
-  dashAlertQueue:[], dashAlertActive:false, lastDashAlertSeq:0,
+  dashAlertQueue:[], dashAlertActive:false, lastDashAlertSeq:0, lastDashPollSeq:0,
   cache:{}, panes:{}, tabDirty:{}, tonVisible:50,
   lastDashRenderSeq:-1, lastDashRenderDay:"", lastDashRenderAt:0,
   renderMetrics:{}
 };
 
 // Xóa PIN từng được các phiên bản cũ lưu trong trình duyệt.
-// Không xóa ktvt_seen_seq vì đây chỉ là mốc dashboard đã xem, không phải credential.
+// Mốc đã xem cũ không còn là source of truth; trạng thái phiếu mới lưu tại DASH_NOTIFICATION_LOG.
 (function purgeLegacySavedPins(){
   try{
     const keys = [];
@@ -654,7 +680,7 @@ async function pollDashboardEvents(){
   if(MODE!=="dash" || document.hidden || !state.accessToken || state.polling) return;
   state.polling=true;
   try{
-    const sinceSeq=Number(state.data&&state.data.latestSeq||0);
+    const sinceSeq=Math.max(0,Number(state.lastDashPollSeq||0));
     const j=await apiCall({type:"DASH_POLL",sinceSeq:sinceSeq},10000);
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok") return;
@@ -666,6 +692,7 @@ async function pollDashboardEvents(){
     }
 
     const events=Array.isArray(j.events)?j.events:[];
+    state.lastDashPollSeq=Math.max(sinceSeq,Number(j.latestSeq||0));
     events
       .filter(e=>e&&["BAO_HONG","SUA_CHUA","BAO_DUONG"].includes(String(e.type||"").toUpperCase()))
       .sort((a,b)=>Number(a.eventSeq||0)-Number(b.eventSeq||0))
@@ -684,13 +711,59 @@ function startDashRefresh(){
   if(!state.dashSafetyTimer) state.dashSafetyTimer=setInterval(refreshViewSilently,300000);
 }
 
+function unreadNotifications(){
+  return ((state.data&&state.data.notifications)||[]).filter(n=>String(n.status||"NEW").toUpperCase()!=="SEEN");
+}
+function notificationTypeLabel(type){
+  const t=String(type||"").toUpperCase();
+  return {BAO_HONG:"🚨 BÁO HỎNG",SUA_CHUA:"🔧 SỬA CHỮA",BAO_DUONG:"🛠 BẢO DƯỠNG",XUAT:"📤 XUẤT KHO",NHAP:"📥 NHẬP KHO",DE_XUAT:"📋 ĐỀ XUẤT"}[t]||t;
+}
+function notificationUrgent(n){ return String(n.type||"").toUpperCase()==="BAO_HONG" && /chết/i.test((n.title||"")+" "+(n.summary||"")); }
+function notificationRowHTML(n, compact=false){
+  const link=n.maXe?(location.origin+location.pathname+'?xe='+encodeURIComponent(n.maXe)):"";
+  return '<div class="notif-row'+(notificationUrgent(n)?' urgent':'')+'" data-notif-row="'+esc(n.notificationId)+'">'
+    +'<div class="nt">'+notificationTypeLabel(n.type)+(n.maXe?' — '+esc(n.maXe):'')+'</div>'
+    +'<div class="ns">'+esc(n.title||"")+(n.summary?' · '+esc(n.summary):'')+'</div>'
+    +'<div class="nm">'+esc(n.ngay||"")+(n.sender?' · '+esc(n.sender):'')+(n.ts?' · '+esc(n.ts):'')+(n.txnId?' · '+esc(n.txnId):'')+'</div>'
+    +'<div class="notif-actions">'
+    +(link?'<a href="'+link+'">Mở hồ sơ xe</a>':'')
+    +'<button type="button" data-notif-seen="'+esc(n.notificationId)+'">Đã xem</button>'
+    +'</div></div>';
+}
+function bindNotificationButtons(root=document){
+  root.querySelectorAll('[data-notif-seen]').forEach(btn=>{btn.onclick=async()=>{await markNotificationsSeen([btn.dataset.notifSeen],false);};});
+}
+function openNotificationInbox(){
+  const list=unreadNotifications();
+  const box=document.getElementById('notifOverlayList');
+  box.innerHTML=list.length?list.map(n=>notificationRowHTML(n)).join(''):'<div class="empty-note">Không có phiếu mới chưa xem.</div>';
+  document.getElementById('notifOverlayDesc').textContent=list.length?list.length+' phiếu chưa xem — dữ liệu lấy từ DASH_NOTIFICATION_LOG.':'Không có phiếu mới chưa xem.';
+  document.getElementById('btnNotifMarkAll').style.display=list.length?'block':'none';
+  bindNotificationButtons(box);
+  document.getElementById('ovNotifications').classList.add('show');
+}
+async function markNotificationsSeen(ids, markAll){
+  try{
+    const j=await apiCall({type:'MARK_NOTIFICATIONS_SEEN',notificationIds:ids||[],markAll:markAll===true,viewer:'Bình'},30000);
+    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
+    if(j.status!=="ok") throw new Error(j.message||"Không đánh dấu được phiếu.");
+    const idSet=new Set(ids||[]);
+    (state.data.notifications||[]).forEach(n=>{if(markAll||idSet.has(n.notificationId)){n.status='SEEN';n.seenAt=j.checkedAt||'';n.viewer='Bình';}});
+    document.getElementById('ovNotifications').classList.remove('show');
+    renderDash();
+  }catch(err){alert(err&&err.message?err.message:'Không kết nối được backend.');}
+}
+document.getElementById('btnNotifClose').onclick=()=>document.getElementById('ovNotifications').classList.remove('show');
+document.getElementById('btnNotifMarkAll').onclick=()=>markNotificationsSeen([],true);
+
 function initUI(){
   const d = state.data;
   if(MODE === "dash"){
     document.body.classList.add("dash");
-    $("hdSub").innerHTML = "Bảng theo dõi tổng — nhận báo hỏng, sửa chữa, bảo dưỡng mỗi 5 giây" + navHTML("dash");
+    $("hdSub").innerHTML = "Bảng theo dõi tổng — nhận phiếu mới mỗi 5 giây" + navHTML("dash");
     renderDash();
     state.lastDashAlertSeq=Number(d.latestSeq||0);
+    state.lastDashPollSeq=Number(d.latestSeq||0);
     startDashRefresh();
     setTimeout(pollDashboardEvents,800);
     return;
@@ -760,8 +833,8 @@ function inspectionClass(s){
 }
 function inspectionDueText(kd){
   if(!kd||kd.status==="NO_DATA") return "Chưa có ngày kiểm định tiếp theo.";
-  if(kd.status==="OVERDUE") return 'Hết hạn <b>'+esc(kd.nextInspectionDate)+'</b> — quá '+Math.abs(Number(kd.daysLeft||0))+' ngày';
-  return 'Hết hạn <b>'+esc(kd.nextInspectionDate)+'</b> — còn '+Number(kd.daysLeft||0)+' ngày';
+  if(kd.status==="OVERDUE") return 'Hạn kiểm định <b>'+esc(kd.nextInspectionDate)+'</b> — quá '+Math.abs(Number(kd.daysLeft||0))+' ngày';
+  return 'Hạn kiểm định <b>'+esc(kd.nextInspectionDate)+'</b> — còn '+Number(kd.daysLeft||0)+' ngày';
 }
 function renderHoSo(){
   const d = state.data;
@@ -1346,9 +1419,9 @@ function renderDash(){
   state.lastDashRenderDay=todayISO();
   state.lastDashRenderAt=Date.now();
   const d=state.data,todayVN=isoToVN(todayISO());
-  const latestSeq=Math.max(0,Number(d.latestSeq||0));let seen=latestSeq;
-  try{const raw=localStorage.getItem("ktvt_seen_seq");if(raw===null)localStorage.setItem("ktvt_seen_seq",String(latestSeq));else seen=Math.max(0,parseInt(raw,10)||0);if(latestSeq<seen){seen=latestSeq;localStorage.setItem("ktvt_seen_seq",String(latestSeq));}}catch(_){seen=latestSeq;}
-  const fresh=Math.max(0,latestSeq-seen);document.title=(fresh?"("+fresh+") ":"")+"Kỹ thuật vật tư — ICD Phúc Long";
+  const latestSeq=Math.max(0,Number(d.latestSeq||0));
+  const unread=unreadNotifications();
+  document.title=(unread.length?"("+unread.length+") ":"")+"Kỹ thuật vật tư — ICD Phúc Long";
 
   const open=d.openBH.map(o=>({...o,age:ageDays(o.ngay),dead:/chết/i.test(o.tinhTrang||"")})).sort((a,b)=>b.age-a.age);
   const pendingQC=(d.pendingQC||[]).slice().sort((a,b)=>sortKey(b)>sortKey(a)?1:-1);
@@ -1373,7 +1446,14 @@ function renderDash(){
    +'<div class="count-card'+(pendingQC.length?' bad':'')+'"><div class="num">'+pendingQC.length+'</div><div class="lb">CHỜ QC</div></div>'
    +'<div class="count-card'+(over.length?' bad':'')+'"><div class="num">'+over.length+'</div><div class="lb">QUÁ HẠN BD</div></div>'
    +'<div class="count-card'+(low.length?' bad':'')+'"><div class="num">'+low.length+'</div><div class="lb">DƯỚI MIN</div></div></div>'
-   +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><div class="dash-note" id="dashUpdated">Cập nhật '+esc(d.updated)+(fresh?' · <b style="color:var(--danger)">'+fresh+' phiếu mới</b>':'')+'</div><button class="seen-btn" id="btnSeen">Đánh dấu đã xem</button></div>';
+   +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px"><div class="dash-note" id="dashUpdated">Cập nhật '+esc(d.updated)+'</div><button class="seen-btn" id="btnOpenNotifications">Phiếu mới '+(unread.length?'<span class="notif-count">'+unread.length+'</span>':'0')+'</button></div>';
+
+  if(unread.length){
+    html+='<div class="notif-box"><div class="notif-head"><b>🔔 '+unread.length+' PHIẾU MỚI</b><button class="notif-link" id="btnNotifAll">Xem tất cả</button></div>'
+      +unread.slice(0,3).map(n=>notificationRowHTML(n,true)).join('')
+      +(unread.length>3?'<div class="dash-note" style="margin-top:7px">Còn '+(unread.length-3)+' phiếu khác.</div>':'')
+      +'</div>';
+  }
 
   const groups={};d.xe.forEach(x=>{(groups[x.loai]=groups[x.loai]||[]).push(x);});
   html+='<div class="sec-t">TRẠNG THÁI PHƯƠNG TIỆN</div>';
@@ -1387,8 +1467,8 @@ function renderDash(){
     +'<div class="inspection-mini'+(kdMissing.length?' warn':'')+'"><b>'+kdMissing.length+'</b><span>CHƯA CÓ DỮ LIỆU</span></div>'
     +'</div>';
   if(!kdOver.length&&!kdSoon.length&&!kdMissing.length) html+='<div class="empty-note">Tất cả phương tiện có hồ sơ kiểm định còn hạn.</div>';
-  kdOver.forEach(r=>{html+='<div class="inspection-card overdue"><div class="inspection-head"><div class="inspection-title"><a href="'+base+'?xe='+encodeURIComponent(r.maXe)+'" style="color:inherit;text-decoration:none">'+esc(r.maXe)+'</a></div><span class="inspection-status">QUÁ HẠN</span></div><div class="inspection-main">Hết hạn <b>'+esc(r.nextInspectionDate)+'</b> — quá '+Math.abs(Number(r.daysLeft||0))+' ngày</div><div class="inspection-meta">'+esc(r.inspectionOrg||"")+(r.certificateNo?' · '+esc(r.certificateNo):'')+'</div></div>';});
-  kdSoon.forEach(r=>{html+='<div class="inspection-card soon"><div class="inspection-head"><div class="inspection-title"><a href="'+base+'?xe='+encodeURIComponent(r.maXe)+'" style="color:inherit;text-decoration:none">'+esc(r.maXe)+'</a></div><span class="inspection-status">SẮP HẾT HẠN</span></div><div class="inspection-main">Hạn <b>'+esc(r.nextInspectionDate)+'</b> — còn '+Number(r.daysLeft||0)+' ngày</div><div class="inspection-meta">'+esc(r.inspectionOrg||"")+(r.certificateNo?' · '+esc(r.certificateNo):'')+'</div></div>';});
+  kdOver.forEach(r=>{html+='<div class="inspection-card overdue"><div class="inspection-head"><div class="inspection-title"><a href="'+base+'?xe='+encodeURIComponent(r.maXe)+'" style="color:inherit;text-decoration:none">'+esc(r.maXe)+'</a></div><span class="inspection-status">QUÁ HẠN</span></div><div class="inspection-main">Hạn kiểm định <b>'+esc(r.nextInspectionDate)+'</b> — quá '+Math.abs(Number(r.daysLeft||0))+' ngày</div><div class="inspection-meta">'+esc(r.inspectionOrg||"")+(r.certificateNo?' · '+esc(r.certificateNo):'')+'</div></div>';});
+  kdSoon.forEach(r=>{html+='<div class="inspection-card soon"><div class="inspection-head"><div class="inspection-title"><a href="'+base+'?xe='+encodeURIComponent(r.maXe)+'" style="color:inherit;text-decoration:none">'+esc(r.maXe)+'</a></div><span class="inspection-status">SẮP HẾT HẠN</span></div><div class="inspection-main">Hạn kiểm định <b>'+esc(r.nextInspectionDate)+'</b> — còn '+Number(r.daysLeft||0)+' ngày</div><div class="inspection-meta">'+esc(r.inspectionOrg||"")+(r.certificateNo?' · '+esc(r.certificateNo):'')+'</div></div>';});
   if(kdMissing.length){html+='<div class="hist-row"><div class="top"><span><span class="hist-tag d">CHƯA CÓ KĐ</span>'+kdMissing.map(r=>'<a href="'+base+'?xe='+encodeURIComponent(r.maXe)+'" style="color:var(--deep-2);margin-right:8px">'+esc(r.maXe)+'</a>').join("")+'</span></div><div class="sub">Anh Bình mở hồ sơ từng xe để cập nhật kiểm định.</div></div>';}
 
   html+='<div class="sec-t">SỰ CỐ ĐANG MỞ ('+open.length+')</div>';
@@ -1416,7 +1496,10 @@ function renderDash(){
   document.querySelectorAll("#daChips button").forEach(b=>{b.classList.toggle("on",b.dataset.t===state.daType);b.onclick=()=>{state.daType=b.dataset.t;document.querySelectorAll("#daChips button").forEach(x=>x.classList.toggle("on",x===b));renderDaList();};});
   if(state.daDate)$("daDate").value=state.daDate;$("daDate").addEventListener("change",()=>{state.daDate=$("daDate").value;renderDaList();});$("daDateAll").onclick=()=>{state.daDate="";$("daDate").value="";renderDaList();};
   function renderDaList(){let list=state.dashActs.filter(a=>state.daType==="all"||a.t===state.daType);const df=$("daDate").value;if(df)list=list.filter(a=>a.ngay===isoToVN(df));else list=list.slice(0,50);const box=$("daList");box.innerHTML="";if(!list.length){box.innerHTML='<div class="empty-note">Không có phiếu khớp bộ lọc.</div>';return;}list.forEach(a=>box.insertAdjacentHTML("beforeend",'<div class="hist-row'+(a.neg?' neg':'')+'"><div class="top"><span>'+a.tag+a.top+'</span><b>'+esc(a.ngay)+'</b></div><div class="sub">Gửi '+esc(a.ts)+' · '+a.sub+'</div></div>'));}
-  renderDaList();$("btnSeen").onclick=()=>{try{localStorage.setItem("ktvt_seen_seq",String(latestSeq));}catch(_){}renderDash();};
+  renderDaList();
+  $("btnOpenNotifications").onclick=openNotificationInbox;
+  const btnAll=document.getElementById("btnNotifAll");if(btnAll)btnAll.onclick=openNotificationInbox;
+  bindNotificationButtons(mainRoot());
 }
 
 /* ==================== NHẬP KHO (PIN_VAN) ==================== */
