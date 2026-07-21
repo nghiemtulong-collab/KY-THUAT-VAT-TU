@@ -262,6 +262,29 @@ body.dash header .hd-inner{max-width:760px}
 .load-more{width:100%;border:1.5px solid var(--line);border-radius:11px;background:var(--white);color:var(--deep-2);font-family:inherit;font-weight:800;font-size:13px;padding:11px;margin:6px 0 2px;cursor:pointer}
 .load-more:active{background:#FFF7EB}
 
+
+/* Observability RC2.4.11 */
+.obs-panel{border:1.5px solid var(--line);border-radius:13px;background:var(--white);padding:10px 12px;margin:10px 0 12px}
+.obs-panel.ok{border-color:var(--ok);background:#F3FAF6}
+.obs-panel.warning{border-color:var(--safety);background:#FFF7EB}
+.obs-panel.critical{border-color:var(--danger);background:#FDF3F2}
+.obs-panel.no-data{border-style:dashed;background:#F1F3F0}
+.obs-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.obs-title{font-size:13px;font-weight:800;color:var(--deep-2)}
+.obs-badge{font-size:10px;font-weight:800;border-radius:20px;padding:3px 8px;background:#E3E7E2;color:var(--muted);white-space:nowrap}
+.obs-panel.ok .obs-badge{background:#DDF2E6;color:var(--ok)}
+.obs-panel.warning .obs-badge{background:#FFE8C6;color:#8A5600}
+.obs-panel.critical .obs-badge{background:#FDE0DD;color:var(--danger)}
+.obs-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:8px}
+.obs-metric{border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.72);padding:7px 5px;text-align:center}
+.obs-metric b{display:block;font-size:15px;color:var(--deep-2)}
+.obs-metric span{display:block;font-size:9px;color:var(--muted);font-weight:800;margin-top:1px}
+.obs-meta{font-size:11px;color:var(--muted);margin-top:7px}
+.obs-details{margin-top:7px;font-size:11.5px}
+.obs-details summary{cursor:pointer;font-weight:800;color:var(--deep-2)}
+.obs-alert{margin-top:5px;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.7);color:var(--ink)}
+@media(max-width:420px){.obs-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
 /* Connection status RC2.4.10 */
 .conn-status{display:none;align-items:center;gap:6px;margin-top:5px;font-size:10.5px;color:#AFC4BC}
 .conn-status.show{display:flex}.conn-dot{width:8px;height:8px;border-radius:50%;background:#AFC4BC;flex:0 0 auto}
@@ -369,7 +392,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.21-RC2.4.10-SERVER-STABILITY";
+const APP_VERSION = "2026.07.21-RC2.4.11-OBSERVABILITY";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -525,6 +548,41 @@ function connectionText_(){
 }
 function startConnectionTicker(){
   if(state.connectionTicker)return;state.connectionTicker=setInterval(()=>{const t=document.getElementById("connText");if(t&&state.connection==="online")t.textContent=connectionText_();},1000);
+}
+
+
+function fmtMetricMs(ms){
+  const n=Number(ms||0);
+  if(!isFinite(n)||n<=0)return "0 ms";
+  return n>=1000?(n/1000).toFixed(n>=10000?0:1)+" s":Math.round(n)+" ms";
+}
+function observabilityPanelHTML(obs){
+  const currentClient=state.lastRequestMs?fmtMetricMs(state.lastRequestMs):"—";
+  const currentServer=state.lastServerMs?fmtMetricMs(state.lastServerMs):"—";
+  if(!obs){
+    return '<div class="obs-panel no-data"><div class="obs-head"><div class="obs-title">📈 TÌNH TRẠNG HỆ THỐNG</div><span class="obs-badge">CHƯA KHỞI TẠO</span></div>'
+      +'<div class="obs-meta">Lần tải hiện tại: '+currentClient+' · server '+currentServer+'. Chạy menu KTVT → Nâng cấp RC2.4.11 để tạo báo cáo tự động.</div></div>';
+  }
+  const status=String(obs.status||"NO_DATA").toUpperCase();
+  const cls=status==="CRITICAL"?"critical":(status==="WARNING"?"warning":(status==="OK"?"ok":"no-data"));
+  const label={OK:"ỔN ĐỊNH",WARNING:"CẦN THEO DÕI",CRITICAL:"CẦN XỬ LÝ",NO_DATA:"CHƯA ĐỦ DỮ LIỆU"}[status]||status;
+  const age=obs.ageMinutes==null?"không rõ":(obs.ageMinutes<60?obs.ageMinutes+" phút":Math.floor(obs.ageMinutes/60)+" giờ");
+  const cache=obs.cacheHitPct==null?"—":Number(obs.cacheHitPct).toFixed(1)+"%";
+  const alerts=Array.isArray(obs.alerts)?obs.alerts:[];
+  const largest=Array.isArray(obs.largestSheets)?obs.largestSheets:[];
+  let detail="";
+  if(alerts.length)detail+='<div>'+alerts.map(a=>'<div class="obs-alert">⚠ '+esc(a)+'</div>').join('')+'</div>';
+  if(largest.length)detail+='<div class="obs-meta">Sheet lớn nhất: '+largest.slice(0,3).map(s=>esc(s.sheet)+' '+Number(s.rows||0)+' dòng').join(' · ')+'</div>';
+  return '<div class="obs-panel '+cls+'"><div class="obs-head"><div class="obs-title">📈 TÌNH TRẠNG HỆ THỐNG — '+Number(obs.lookbackHours||24)+' GIỜ</div><span class="obs-badge">'+label+'</span></div>'
+    +'<div class="obs-metrics">'
+    +'<div class="obs-metric"><b>'+Number(obs.requests||0)+'</b><span>REQUEST</span></div>'
+    +'<div class="obs-metric"><b>'+fmtMetricMs(obs.p95ServerMs)+'</b><span>P95 SERVER</span></div>'
+    +'<div class="obs-metric"><b>'+Number(obs.requestErrors||0)+'</b><span>REQUEST LỖI</span></div>'
+    +'<div class="obs-metric"><b>'+cache+'</b><span>CACHE HIT</span></div>'
+    +'</div>'
+    +'<div class="obs-meta">Báo cáo cập nhật '+age+' trước · Lần tải hiện tại '+currentClient+' · server '+currentServer+' · Lock timeout '+Number(obs.lockTimeouts||0)+' · Partial commit '+Number(obs.partialCommits||0)+'</div>'
+    +(detail?'<details class="obs-details"><summary>Xem cảnh báo và dung lượng</summary>'+detail+'</details>':'')
+    +'</div>';
 }
 
 /* ==================== API / ACCESS / LOAD ==================== */
@@ -1655,6 +1713,7 @@ function renderDash(){
       +(unread.length>3?'<div class="dash-note" style="margin-top:7px">Còn '+(unread.length-3)+' phiếu khác.</div>':'')
       +'</div>';
   }
+  html+=observabilityPanelHTML(d.observability);
 
   const groups={};d.xe.forEach(x=>{(groups[x.loai]=groups[x.loai]||[]).push(x);});
   html+='<div class="sec-t">TRẠNG THÁI PHƯƠNG TIỆN</div>';
