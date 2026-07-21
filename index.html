@@ -189,6 +189,15 @@ body.dash header .hd-inner{max-width:760px}
 .load-more{width:100%;border:1.5px solid var(--line);border-radius:11px;background:var(--white);color:var(--deep-2);font-family:inherit;font-weight:800;font-size:13px;padding:11px;margin:6px 0 2px;cursor:pointer}
 .load-more:active{background:#FFF7EB}
 
+/* Dashboard heartbeat RC2.4.5 */
+.dash-live-alert{position:fixed;left:50%;top:86px;transform:translateX(-50%) translateY(-12px);width:min(720px,calc(100% - 28px));z-index:45;background:#FFF4E4;border:2px solid var(--safety);border-radius:12px;padding:11px 14px;box-shadow:0 5px 18px rgba(22,48,43,.22);opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease}
+.dash-live-alert.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+.dash-live-alert.dead{background:#FDECEA;border-color:var(--danger)}
+.dash-live-alert .ttl{font-size:13px;font-weight:800;color:var(--deep)}
+.dash-live-alert.dead .ttl{color:var(--danger)}
+.dash-live-alert .msg{font-size:12.5px;color:var(--ink);margin-top:2px;overflow-wrap:anywhere}
+.dash-live-alert .meta{font-size:11px;color:var(--muted);margin-top:3px}
+
 </style>
 </head>
 <body>
@@ -202,6 +211,12 @@ body.dash header .hd-inner{max-width:760px}
     <div class="tabs" id="tabs"></div>
   </div>
 </header>
+
+<div class="dash-live-alert" id="dashLiveAlert" role="alert" aria-live="assertive">
+  <div class="ttl" id="dashLiveTitle"></div>
+  <div class="msg" id="dashLiveMsg"></div>
+  <div class="meta" id="dashLiveMeta"></div>
+</div>
 
 <div class="wrap" id="main"><div class="load">Đang tải dữ liệu…</div></div>
 
@@ -258,7 +273,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.20-RC2.4.4-FINAL-RC";
+const APP_VERSION = "2026.07.21-RC2.4.5-DASH-POLL";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -286,7 +301,8 @@ const NHOM_ORDER = ["MÁY XN","ĐIỆN XN","MÁY ĐK","ĐIỆN ĐK","CƠ KHÍ","
 const state = {
   data:null, tab:null, slip:{}, slipKind:null, pending:null,
   accessToken:"", accessScope:INITIAL_ACCESS_SCOPE, clientId:"", versionOk:false, sending:false,
-  dashTimer:null, daType:"all", daDate:"", refreshing:false,
+  dashTimer:null, dashSafetyTimer:null, dashAlertTimer:null, daType:"all", daDate:"", refreshing:false, polling:false,
+  lastDashAlertSeq:0,
   cache:{}, panes:{}, tabDirty:{}, tonVisible:50,
   lastDashRenderSeq:-1, lastDashRenderDay:"", lastDashRenderAt:0,
   renderMetrics:{}
@@ -452,7 +468,30 @@ function stopDashRefresh(){
     clearInterval(state.dashTimer);
     state.dashTimer=null;
   }
+  if(state.dashSafetyTimer){
+    clearInterval(state.dashSafetyTimer);
+    state.dashSafetyTimer=null;
+  }
   state.refreshing=false;
+  state.polling=false;
+}
+function showDashLiveAlert(event){
+  if(MODE!=="dash" || !event) return;
+  const seq=Number(event.eventSeq||0);
+  if(seq && seq<=state.lastDashAlertSeq) return;
+  if(seq) state.lastDashAlertSeq=seq;
+
+  const box=document.getElementById("dashLiveAlert");
+  if(!box) return;
+  const dead=/chết/i.test(event.tinhTrang||"");
+  box.classList.toggle("dead",dead);
+  document.getElementById("dashLiveTitle").textContent=(dead?"🔴 XE CHẾT MÁY":"🚨 BÁO HỎNG MỚI")+" — "+(event.maXe||"");
+  document.getElementById("dashLiveMsg").textContent=(event.moTa||"Có báo hỏng mới.")+(event.tinhTrang?" · "+event.tinhTrang:"");
+  document.getElementById("dashLiveMeta").textContent=[event.nguoi?"Người báo: "+event.nguoi:"",event.maBH||"",event.ts||""].filter(Boolean).join(" · ");
+  box.classList.add("show");
+  try{if(navigator.vibrate) navigator.vibrate(dead?[250,120,250]:[160]);}catch(_){ }
+  if(state.dashAlertTimer) clearTimeout(state.dashAlertTimer);
+  state.dashAlertTimer=setTimeout(()=>box.classList.remove("show"),dead?15000:10000);
 }
 function requireRelogin(msg){
   stopDashRefresh();
@@ -528,13 +567,46 @@ async function refreshViewSilently(){
   }finally{state.refreshing=false;}
 }
 
+async function pollDashboardEvents(){
+  if(MODE!=="dash" || document.hidden || !state.accessToken || state.polling) return;
+  state.polling=true;
+  try{
+    const sinceSeq=Number(state.data&&state.data.latestSeq||0);
+    const j=await apiCall({type:"DASH_POLL",sinceSeq:sinceSeq},10000);
+    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
+    if(j.status!=="ok") return;
+    if(j.versionMismatch || j.version!==APP_VERSION){
+      state.versionOk=false;stopDashRefresh();
+      window.__ktvtActivePane=null;
+      mainRoot().innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Đã dừng tự cập nhật và khóa ghi dữ liệu. Ctrl+F5 sau khi deploy hoàn tất.</div>';
+      $("hdSub").textContent="Lệch phiên bản — đã khóa ghi dữ liệu";return;
+    }
+
+    const events=Array.isArray(j.events)?j.events:[];
+    events.filter(e=>e&&e.type==="BAO_HONG").sort((a,b)=>Number(a.eventSeq||0)-Number(b.eventSeq||0)).forEach(showDashLiveAlert);
+
+    // Chỉ tải VIEW nặng khi sequence thực sự thay đổi.
+    if(j.changed || Number(j.latestSeq||0)!==sinceSeq) await refreshViewSilently();
+  }catch(_){
+    // Heartbeat lỗi tạm thời không xóa dữ liệu hiện có; chu kỳ sau sẽ thử lại.
+  }finally{state.polling=false;}
+}
+function startDashRefresh(){
+  if(MODE!=="dash" || document.hidden || !state.accessToken) return;
+  if(!state.dashTimer) state.dashTimer=setInterval(pollDashboardEvents,5000);
+  // Safety refresh bắt thay đổi do sửa tay trong Sheet, vì sửa tay không tăng eventSeq.
+  if(!state.dashSafetyTimer) state.dashSafetyTimer=setInterval(refreshViewSilently,300000);
+}
+
 function initUI(){
   const d = state.data;
   if(MODE === "dash"){
     document.body.classList.add("dash");
-    $("hdSub").innerHTML = "Bảng theo dõi tổng — tự cập nhật mỗi 60 giây" + navHTML("dash");
+    $("hdSub").innerHTML = "Bảng theo dõi tổng — kiểm tra báo hỏng mỗi 5 giây" + navHTML("dash");
     renderDash();
-    if(!state.dashTimer) state.dashTimer = setInterval(refreshViewSilently, 60000);
+    state.lastDashAlertSeq=Number(d.latestSeq||0);
+    startDashRefresh();
+    setTimeout(pollDashboardEvents,800);
     return;
   }
   if(MODE === "xe"){
@@ -1329,7 +1401,13 @@ $("btnAccess").onclick=async()=>{
   finally{$("btnAccess").disabled=false;$("btnAccess").textContent="Mở hệ thống";}
 };
 $("accessPin").addEventListener("keydown",e=>{if(e.key==="Enter")$("btnAccess").click();});
-$("btnLogout").onclick=()=>{clearAccessToken(state.accessScope);location.reload();};
+$("btnLogout").onclick=()=>{stopDashRefresh();clearAccessToken(state.accessScope);location.reload();};
+window.addEventListener("focus",()=>{if(MODE==="dash"){startDashRefresh();pollDashboardEvents();}});
+document.addEventListener("visibilitychange",()=>{
+  if(MODE!=="dash") return;
+  if(document.hidden) stopDashRefresh();
+  else{startDashRefresh();pollDashboardEvents();}
+});
 
 if(state.accessToken){$("ovAccess").classList.remove("show");loadData();}
 else{$("ovAccess").classList.add("show");}
