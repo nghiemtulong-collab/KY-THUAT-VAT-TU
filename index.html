@@ -392,7 +392,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.21-RC2.4.11-OBSERVABILITY";
+const APP_VERSION = "2026.07.21-RC2.4.12-VIEW-PERFORMANCE";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -759,14 +759,18 @@ async function loginAccess(pin){
 }
 async function loadData(){
   if(!state.accessToken){$("ovAccess").classList.add("show");return;}
-  setConnectionStatus("syncing");startConnectionTicker();
+  const hadData=!!state.data;
+  const previousTab=state.tab;
+  setConnectionStatus("syncing",hadData?"Đang cập nhật dữ liệu nền…":"Đang tải dữ liệu…");
+  startConnectionTicker();
   window.__ktvtActivePane=null;
-  mainRoot().innerHTML='<div class="load">Đang tải dữ liệu…</div>';
+  if(!hadData)mainRoot().innerHTML='<div class="load">Đang tải dữ liệu…</div>';
   try{
     const j=await apiCall({type:"VIEW"},30000);
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok")throw new Error(j.message||"Không tải được dữ liệu.");
     state.data=j;state.versionOk=!j.versionMismatch&&j.version===APP_VERSION;document.documentElement.dataset.appVersion=APP_VERSION;
+    if(previousTab)state.tab=previousTab;
     prepareDataCache(j);
     resetTabPanes();
     $("ovAccess").classList.remove("show");
@@ -774,12 +778,14 @@ async function loadData(){
       mainRoot().innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Không được gửi phiếu. Chờ GitHub/Apps Script deploy xong rồi Ctrl+F5.</div>';
       $("hdSub").textContent="Lệch phiên bản — đã khóa ghi dữ liệu";return;
     }
-    setConnectionStatus("online");
+    setConnectionStatus("online",j.cacheHit?"Đã đồng bộ từ cache hiển thị":"Đã đồng bộ dữ liệu mới");
     initUI();
   }catch(err){
-    setConnectionStatus("offline");
-    window.__ktvtActivePane=null;
-    mainRoot().innerHTML='<div class="load">Không tải được dữ liệu — '+esc(err&&err.message?err.message:"kiểm tra mạng")+'. <a href="#" onclick="loadData();return false;">Bấm tải lại</a>.</div>';
+    setConnectionStatus("offline",(err&&err.name==="AbortError"?"Server phản hồi quá lâu":"Mất kết nối")+" — "+(hadData?"giữ dữ liệu cũ":"chưa tải được dữ liệu"));
+    if(!hadData){
+      window.__ktvtActivePane=null;
+      mainRoot().innerHTML='<div class="load">Không tải được dữ liệu — '+esc(err&&err.message?err.message:"kiểm tra mạng")+'. <a href="#" onclick="loadData();return false;">Bấm tải lại</a>.</div>';
+    }
   }
 }
 
@@ -795,7 +801,7 @@ async function refreshViewSilently(){
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok")throw new Error(j.message||"Không tải được Dashboard.");
     if(j.versionMismatch||j.version!==APP_VERSION){state.versionOk=false;stopDashRefresh();window.__ktvtActivePane=null;mainRoot().innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Đã dừng tự cập nhật và khóa ghi dữ liệu. Ctrl+F5 sau khi deploy hoàn tất.</div>';$('hdSub').textContent="Lệch phiên bản — đã khóa ghi dữ liệu";return;}
-    state.connectionFailures=0;state.pollDelayMs=5000;setConnectionStatus("online");
+    state.connectionFailures=0;state.pollDelayMs=5000;setConnectionStatus("online",j.cacheHit?"Đồng bộ nhanh từ cache":"Đã nhận dữ liệu mới");
     const prevSeq=Number(state.data&&state.data.latestSeq||0),nextSeq=Number(j.latestSeq||0),day=todayISO();
     const canSkip=prevSeq===nextSeq&&state.lastDashRenderDay===day&&(Date.now()-state.lastDashRenderAt)<300000;
     if(canSkip){state.data.updated=j.updated;const updated=document.getElementById("dashUpdated");if(updated)updated.firstChild.textContent="Cập nhật "+j.updated;return;}
@@ -923,7 +929,7 @@ function initUI(){
 
 function buildTabs(list){
   const t=$("tabs");t.innerHTML="";resetTabPanes();
-  const initial=list.some(x=>x[0]===START_TAB)?START_TAB:list[0][0];
+  const preferred=state.tab&&list.some(x=>x[0]===state.tab)?state.tab:START_TAB;const initial=list.some(x=>x[0]===preferred)?preferred:list[0][0];
   list.forEach(([id,label])=>{
     const b=document.createElement("button");b.textContent=label;b.className=id===initial?"on":"";
     b.onclick=()=>{t.querySelectorAll("button").forEach(x=>x.classList.remove("on"));b.classList.add("on");openTab(id);};
