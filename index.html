@@ -137,6 +137,25 @@ header{background:var(--deep);color:var(--white);padding:14px;position:sticky;to
 body.adjusting .fbox.slipbox{border-color:var(--danger)}
 body.adjusting .fbox.slipbox .fbox-head{background:var(--danger)}
 
+
+/* Phiếu xuất nhiều hạng mục/phương tiện */
+.multi-check-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.multi-check{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line);border-radius:10px;padding:9px 10px;background:var(--white);font-size:12.5px;font-weight:700;cursor:pointer}
+.multi-check.on{border-color:var(--safety);background:#FFF7EB;color:var(--deep-2)}
+.multi-check input{width:18px;height:18px;accent-color:var(--safety);flex-shrink:0}
+.scope-group{margin-top:9px}.scope-group-title{font-size:12px;font-weight:800;color:var(--muted);margin:5px 0}
+.vehicle-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.vehicle-pick{display:flex;align-items:center;justify-content:center;gap:5px;border:1.5px solid var(--line);border-radius:9px;padding:8px 4px;background:var(--white);font-size:12px;font-weight:800;cursor:pointer}
+.vehicle-pick.on{border-color:var(--safety);background:#FFF7EB;color:var(--deep-2)}
+.vehicle-pick input{width:16px;height:16px;accent-color:var(--safety)}
+.alloc-card{border:1px solid var(--line);border-radius:11px;background:var(--white);margin-bottom:9px;overflow:hidden}
+.alloc-head{padding:9px 11px;background:var(--paper);font-size:12.5px;font-weight:800;display:flex;justify-content:space-between;gap:8px}
+.alloc-head.bad{background:#FDE8E6;color:var(--danger)}
+.alloc-row{display:flex;align-items:center;gap:8px;padding:8px 11px;border-top:1px dashed var(--line)}
+.alloc-row label{flex:1;font-size:12.5px;font-weight:700}.alloc-row input{width:76px;border:1.5px solid var(--line);border-radius:8px;padding:8px;text-align:center;font-family:inherit;font-weight:800}
+.scope-actions{display:flex;gap:7px;margin-top:8px}.scope-actions button{flex:1;border:1.5px solid var(--line);background:var(--white);border-radius:9px;padding:8px;font-family:inherit;font-size:12px;font-weight:800;color:var(--deep-2)}
+@media(max-width:380px){.vehicle-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.multi-check-grid{grid-template-columns:1fr}}
+
 /* Tồn kho */
 .chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:8px}
 .chips button{border:1.5px solid var(--line);border-radius:20px;background:var(--white);font-family:inherit;font-weight:700;font-size:12.5px;padding:7px 13px;cursor:pointer;color:var(--muted);white-space:nowrap}
@@ -327,7 +346,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.21-RC2.4.8-STABILITY-UX";
+const APP_VERSION = "2026.07.21-RC2.4.9A-MULTI-XUAT";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -354,6 +373,7 @@ const NHOM_ORDER = ["MÁY XN","ĐIỆN XN","MÁY ĐK","ĐIỆN ĐK","CƠ KHÍ","
 
 const state = {
   data:null, tab:null, slip:{}, slipKind:null, pending:null,
+  xuatCategories:{}, xuatVehicles:{}, xuatAlloc:{},
   accessToken:"", accessScope:INITIAL_ACCESS_SCOPE, clientId:"", versionOk:false, sending:false,
   dashTimer:null, dashSafetyTimer:null, dashAlertTimer:null, daType:"all", daDate:"", refreshing:false, polling:false,
   dashAlertQueue:[], dashAlertActive:false, lastDashAlertSeq:0, lastDashPollSeq:0,
@@ -800,7 +820,7 @@ function buildTabs(list){
 }
 
 function openTab(id){
-  state.tab=id;state.slip={};state.slipKind=null;document.body.classList.remove("adjusting");$("bar").classList.remove("show");
+  state.tab=id;state.slip={};state.slipKind=null;state.xuatCategories={};state.xuatVehicles={};state.xuatAlloc={};document.body.classList.remove("adjusting");$("bar").classList.remove("show");
   const fn={hoso:renderHoSo,baohong:renderBaoHong,suachua:renderSuaChua,baoduong:renderBaoDuong,ton:renderTon,xuat:renderXuat,nhap:renderNhap,dexuat:renderDeXuat,lichsu:renderLichSu,qc:renderQC}[id];
   if(!fn) return;
 
@@ -1094,7 +1114,7 @@ function renderSlipRows(){
     : "<b>"+list.length+"</b> mã vật tư";
   const allowNoMaterialRepair = state.tab === "suachua" && !isAdjustmentOn();
   $("btnSend").disabled = list.length === 0 && !allowNoMaterialRepair;
-  if(!list.length){ rows.innerHTML = '<div class="slip-empty">Chưa có vật tư nào. Tìm và bấm chọn ở trên.</div>'; return; }
+  if(!list.length){ rows.innerHTML = '<div class="slip-empty">Chưa có vật tư nào. Tìm và bấm chọn ở trên.</div>'; if(state.tab==="xuat")renderXuatAllocation(); return; }
   rows.innerHTML = "";
   list.forEach(r=>{
     const d = document.createElement("div");
@@ -1114,6 +1134,7 @@ function renderSlipRows(){
     };
     rows.appendChild(d);
   });
+  if(state.tab==="xuat")renderXuatAllocation();
 }
 function adjustRowHTML(){
   return '<label class="frow adjust-row" for="adjChk" style="cursor:pointer;user-select:none">'
@@ -1131,6 +1152,7 @@ function bindAdjust(){
       r.qty = on ? -Math.max(1,Math.abs(Number(r.qty)||1)) : Math.max(1,Math.abs(Number(r.qty)||1));
     });
     renderSlipRows();
+    if(state.tab==="xuat")renderXuatAllocation();
     const prefix = state.tab === "xuat" ? "xk" : (state.tab === "nhap" ? "nh" : "dx");
     if($(prefix+"Q")) renderSlipSearch(prefix);
   };
@@ -1328,58 +1350,127 @@ function renderTonList(){
   const more=$("tonMore");if(more)more.onclick=()=>{state.tonVisible+=50;renderTonList();};
 }
 
-/* ==================== XUẤT KHO (PIN_VAN) — sổ riêng XUAT_RESP ==================== */
+/* ==================== XUẤT KHO NHIỀU HẠNG MỤC/PHƯƠNG TIỆN ==================== */
 const HANG_MUC_XUAT = ["XE NÂNG HÀNG","XE NÂNG RỖNG","ĐẦU KÉO","CẨU KHUNG","CẨU SUMITOMO","KHÁC"];
+function xuatCategoryForVehicle(x){
+  const n=stripAccent((x&&x.loai)||"");
+  if(n.includes("xe nang hang"))return "XE NÂNG HÀNG";
+  if(n.includes("xe nang rong"))return "XE NÂNG RỖNG";
+  if(n.includes("dau keo"))return "ĐẦU KÉO";
+  if(n.includes("cau khung"))return "CẨU KHUNG";
+  if(n.includes("cau sumitomo"))return "CẨU SUMITOMO";
+  return "KHÁC";
+}
+function selectedXuatVehicles(){return Object.keys(state.xuatVehicles).filter(k=>state.xuatVehicles[k]);}
+function xuatCategoriesHTML(){
+  return '<div class="multi-check-grid">'+HANG_MUC_XUAT.map(h=>'<label class="multi-check'+(state.xuatCategories[h]?' on':'')+'"><input type="checkbox" data-xcat="'+esc(h)+'" '+(state.xuatCategories[h]?'checked':'')+'><span>'+esc(h)+'</span></label>').join('')+'</div>';
+}
+function renderXuatVehicleChooser(){
+  const box=$("xkVehicleBox");if(!box)return;
+  const cats=HANG_MUC_XUAT.filter(h=>state.xuatCategories[h]);
+  if(!cats.length){box.innerHTML='<div class="empty-note">Chọn ít nhất một hạng mục để hiện danh sách phương tiện.</div>';renderXuatAllocation();return;}
+  let html='';
+  cats.forEach(cat=>{
+    const list=state.data.xe.filter(x=>xuatCategoryForVehicle(x)===cat);
+    html+='<div class="scope-group"><div class="scope-group-title">'+esc(cat)+' ('+list.length+')</div>';
+    if(!list.length)html+='<div class="hint">Không có phương tiện trong danh mục.</div>';
+    else html+='<div class="vehicle-grid">'+list.map(x=>'<label class="vehicle-pick'+(state.xuatVehicles[x.ma]?' on':'')+'"><input type="checkbox" data-xvehicle="'+esc(x.ma)+'" '+(state.xuatVehicles[x.ma]?'checked':'')+'><span>'+esc(x.ma)+'</span></label>').join('')+'</div>';
+    html+='</div>';
+  });
+  html+='<div class="scope-actions"><button type="button" id="xkSelectAll">Chọn tất cả đang hiện</button><button type="button" id="xkClearVehicles">Bỏ chọn phương tiện</button></div>';
+  box.innerHTML=html;
+  box.querySelectorAll('[data-xvehicle]').forEach(el=>el.onchange=()=>{
+    state.xuatVehicles[el.dataset.xvehicle]=el.checked;
+    el.closest('.vehicle-pick').classList.toggle('on',el.checked);
+    renderXuatAllocation();
+  });
+  const all=$("xkSelectAll");if(all)all.onclick=()=>{cats.forEach(cat=>state.data.xe.filter(x=>xuatCategoryForVehicle(x)===cat).forEach(x=>state.xuatVehicles[x.ma]=true));renderXuatVehicleChooser();};
+  const clear=$("xkClearVehicles");if(clear)clear.onclick=()=>{state.xuatVehicles={};state.xuatAlloc={};renderXuatVehicleChooser();};
+  renderXuatAllocation();
+}
+function normalizeXuatAllocState(){
+  const vehicles=selectedXuatVehicles(), vehicleSet=Object.fromEntries(vehicles.map(v=>[v,true]));
+  Object.keys(state.xuatAlloc).forEach(ma=>{
+    Object.keys(state.xuatAlloc[ma]||{}).forEach(v=>{if(!vehicleSet[v])delete state.xuatAlloc[ma][v];});
+    if(!state.slip[ma])delete state.xuatAlloc[ma];
+  });
+  const items=Object.values(state.slip);
+  if(vehicles.length===1){
+    items.forEach(it=>{state.xuatAlloc[it.ma]=state.xuatAlloc[it.ma]||{};state.xuatAlloc[it.ma][vehicles[0]]=Math.abs(Number(it.qty)||0);});
+  }
+}
+function renderXuatAllocation(){
+  const box=$("xkAllocBox");if(!box)return;
+  normalizeXuatAllocState();
+  const vehicles=selectedXuatVehicles(), items=Object.values(state.slip);
+  if(!vehicles.length){box.innerHTML='<div class="empty-note">Chọn phương tiện trước khi phân bổ vật tư.</div>';return;}
+  if(!items.length){box.innerHTML='<div class="empty-note">Thêm vật tư vào phiếu để nhập số lượng cho từng xe.</div>';return;}
+  box.innerHTML=items.map(it=>{
+    const target=Math.abs(Number(it.qty)||0), alloc=state.xuatAlloc[it.ma]||{}, sum=vehicles.reduce((s,v)=>s+Number(alloc[v]||0),0), bad=sum!==target;
+    return '<div class="alloc-card"><div class="alloc-head'+(bad?' bad':'')+'"><span>'+esc(it.ten)+' · tổng '+target+' '+esc(it.dvt)+'</span><span>Đã chia '+sum+'/'+target+'</span></div>'
+      +vehicles.map(v=>'<div class="alloc-row"><label>'+esc(v)+'</label><input type="number" min="0" max="999999" step="1" inputmode="numeric" data-alloc-ma="'+esc(it.ma)+'" data-alloc-xe="'+esc(v)+'" value="'+Number(alloc[v]||0)+'"></div>').join('')+'</div>';
+  }).join('');
+  box.querySelectorAll('[data-alloc-ma]').forEach(inp=>inp.onchange=()=>{
+    let q=parseInt(inp.value,10);if(!Number.isFinite(q)||q<0)q=0;if(q>999999)q=999999;
+    state.xuatAlloc[inp.dataset.allocMa]=state.xuatAlloc[inp.dataset.allocMa]||{};
+    state.xuatAlloc[inp.dataset.allocMa][inp.dataset.allocXe]=q;renderXuatAllocation();
+  });
+}
+function collectXuatAllocations(list,isAdjustment){
+  const cats=HANG_MUC_XUAT.filter(h=>state.xuatCategories[h]);
+  if(!cats.length){alert('Chọn ít nhất một hạng mục xuất.');return null;}
+  const vehicles=selectedXuatVehicles();if(!vehicles.length){alert('Chọn ít nhất một phương tiện.');return null;}
+  for(const cat of cats){if(!vehicles.some(v=>{const x=state.data.xe.find(z=>z.ma===v);return x&&xuatCategoryForVehicle(x)===cat;})){alert('Hạng mục '+cat+' chưa chọn phương tiện nào.');return null;}}
+  const used={};const out=[];
+  for(const it of list){
+    const target=Math.abs(Number(it.qty)||0), alloc=state.xuatAlloc[it.ma]||{};let sum=0;
+    vehicles.forEach(v=>{const q=Math.max(0,parseInt(alloc[v]||0,10)||0);sum+=q;if(q>0){used[v]=true;out.push({ma:it.ma,maXe:v,qty:isAdjustment?-q:q});}});
+    if(sum!==target){alert('Vật tư '+it.ten+': tổng phân bổ phải bằng '+target+' '+it.dvt+', hiện là '+sum+'.');return null;}
+  }
+  const unused=vehicles.filter(v=>!used[v]);if(unused.length){alert('Các phương tiện chưa được phân bổ vật tư: '+unused.join(', ')+'.');return null;}
+  return {vehicles,allocations:out,categories:cats};
+}
 function renderXuat(){
   const dl = '<datalist id="dlNhan">' + TO_TRUONG.map(t=>'<option value="'+esc(t.split(" (")[0])+'">').join("") + '</datalist>';
-  const hmOpts = '<option value="">— Chọn hạng mục —</option>' + HANG_MUC_XUAT.map(h=>'<option>'+esc(h)+'</option>').join("");
   $("main").innerHTML =
     slipSearchHTML("xk")
    + slipBoxHTML("PHIẾU XUẤT KHO")
    +'<div class="frow"><label>Người nhận (thợ lên lãnh)</label><input type="text" id="xkNhan" list="dlNhan" placeholder="Vd: Học, Ân, Trọng…">'+dl+'</div>'
-   +'<div class="frow"><label>Hạng mục xuất</label><select id="xkHM">'+hmOpts+'</select></div>'
-   +'<div class="frow"><label>Cho phương tiện nào (nếu biết — không bắt buộc)</label><select id="xkXe"><option value="">— Không gắn phương tiện cụ thể —</option></select></div>'
-   +'<div class="frow"><label>Lý do xuất</label><input type="text" id="xkNote" placeholder="Vd: thay đèn sau NB05, bảo dưỡng định kỳ…"></div>'
+   +'<div class="frow"><label>Hạng mục xuất — chọn nhiều</label><div id="xkCategoryBox">'+xuatCategoriesHTML()+'</div></div>'
+   +'<div class="frow"><label>Phương tiện — chọn nhiều</label><div id="xkVehicleBox"></div></div>'
+   +'<div class="frow"><label>Phân bổ số lượng vật tư theo từng phương tiện</label><div class="hint">Tổng phân bổ của từng vật tư phải bằng số lượng trên phiếu.</div><div id="xkAllocBox"></div></div>'
+   +'<div class="frow"><label>Lý do xuất</label><input type="text" id="xkNote" placeholder="Vd: thay đèn NB05, bảo dưỡng định kỳ…"></div>'
    +'<div class="frow"><label>Người gửi</label><input type="text" id="xkNguoi" value="Vân"></div>'
    +'<div class="frow"><label>Ngày</label><input type="date" id="xkNgay" required value="'+todayISO()+'"></div>'
    + adjustRowHTML()
    +'</div>';
   bindSlipSearch("xk"); bindAdjust();
-  function fillXe(){
-    const hm = $("xkHM").value;
-    const map = {"XE NÂNG HÀNG":"XE NÂNG HÀNG","XE NÂNG RỖNG":"XE NÂNG RỖNG","ĐẦU KÉO":"ĐẦU KÉO","CẨU KHUNG":"CẨU KHUNG","CẨU SUMITOMO":"CẨU SUMITOMO"};
-    const list = state.data.xe.filter(x => !map[hm] || x.loai === map[hm]);
-    $("xkXe").innerHTML = '<option value="">— Không gắn phương tiện cụ thể —</option>' + list.map(x=>'<option>'+esc(x.ma)+'</option>').join("");
-  }
-  fillXe();
-  $("xkHM").onchange = fillXe;
+  $("xkCategoryBox").querySelectorAll('[data-xcat]').forEach(el=>el.onchange=()=>{
+    state.xuatCategories[el.dataset.xcat]=el.checked;el.closest('.multi-check').classList.toggle('on',el.checked);
+    if(!el.checked){state.data.xe.filter(x=>xuatCategoryForVehicle(x)===el.dataset.xcat).forEach(x=>{delete state.xuatVehicles[x.ma];Object.values(state.xuatAlloc).forEach(a=>delete a[x.ma]);});}
+    renderXuatVehicleChooser();
+  });
+  renderXuatVehicleChooser();
   $("bar").classList.add("show");
-  const btn = $("btnSend");
-  btn.textContent = "Gửi phiếu"; btn.disabled = true;
-  renderSlipRows();
+  const btn = $("btnSend");btn.textContent = "Gửi phiếu";btn.disabled = true;renderSlipRows();
   btn.onclick = ()=>{
-    const list = Object.values(state.slip);
-    if(!list.length) return;
+    const list = Object.values(state.slip);if(!list.length)return;
     const isAdjustment = $("adjChk").checked;
-    const refTxnId = requireAdjustmentRef(isAdjustment); if(refTxnId===null) return;
-    if(!validateSlipSign(list, isAdjustment)) return;
-    if(!validateStockAvailability(list, isAdjustment)) return;
-    if(!$("xkNhan").value.trim()){ alert("Ghi tên người nhận."); return; }
-    if(!$("xkHM").value){ alert("Chọn hạng mục xuất."); return; }
-    if(!$("xkNote").value.trim()){ alert("Ghi lý do xuất."); return; }
-    if(isAdjustment && !$("xkNote").value.trim()){ alert("Phiếu điều chỉnh bắt buộc ghi chú lý do."); return; }
-    const ngay = requireDateVN("xkNgay"); if(!ngay) return;
+    const refTxnId = requireAdjustmentRef(isAdjustment);if(refTxnId===null)return;
+    if(!validateSlipSign(list,isAdjustment)||!validateStockAvailability(list,isAdjustment))return;
+    if(!$("xkNhan").value.trim()){alert("Ghi tên người nhận.");return;}
+    if(!$("xkNote").value.trim()){alert("Ghi lý do xuất.");return;}
+    if(!$("xkNguoi").value.trim()){alert("Ghi tên người gửi.");return;}
+    const scope=collectXuatAllocations(list,isAdjustment);if(!scope)return;
+    const ngay=requireDateVN("xkNgay");if(!ngay)return;
+    const allocHtml=list.map(it=>{const rows=scope.allocations.filter(a=>a.ma===it.ma).map(a=>esc(a.maXe)+': <b>'+Math.abs(a.qty)+' '+esc(it.dvt)+'</b>').join(', ');return '• '+esc(it.ten)+' — '+rows;}).join('<br>');
     openConfirm({
-      title: "Xác nhận PHIẾU "+(isAdjustment?"ĐIỀU CHỈNH ":"")+"XUẤT KHO",
-      summary: list.map(r=>"• "+esc(r.ten)+" — <b>"+r.qty+" "+esc(r.dvt)+"</b>").join("<br>")
-             + "<br>Người nhận: <b>"+esc($("xkNhan").value.trim())+"</b> · "+esc($("xkHM").value)
-             + ($("xkXe").value ? " · xe <b>"+esc($("xkXe").value)+"</b>" : ""),
-      needPin: "VAN",
-      payload: { type:"XUAT", maXe:$("xkXe").value, hangMuc:$("xkHM").value, nguoiNhan:$("xkNhan").value.trim(),
-                 nguoi:$("xkNguoi").value.trim(), note:$("xkNote").value.trim(), date:ngay, isAdjustment:isAdjustment, refTxnId:refTxnId,
-                 items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})) },
-      doneMsg: j=> "Đã ghi phiếu "+(j.phieuId||j.txnId||"")+" với "+list.length+" mã. Tồn đã cập nhật.",
-      after: ()=>{ loadData(); }
+      title:"Xác nhận PHIẾU "+(isAdjustment?"ĐIỀU CHỈNH ":"")+"XUẤT KHO",
+      summary:allocHtml+'<br>Hạng mục: <b>'+scope.categories.map(esc).join(', ')+'</b><br>Người nhận: <b>'+esc($("xkNhan").value.trim())+'</b>',
+      needPin:"VAN",
+      payload:{type:"XUAT",maXeList:scope.vehicles,allocations:scope.allocations,nguoiNhan:$("xkNhan").value.trim(),nguoi:$("xkNguoi").value.trim(),note:$("xkNote").value.trim(),date:ngay,isAdjustment:isAdjustment,refTxnId:refTxnId,items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty}))},
+      doneMsg:j=>"Đã ghi phiếu "+(j.phieuId||j.txnId||"")+" cho "+scope.vehicles.length+" phương tiện, "+list.length+" mã vật tư.",
+      after:()=>{loadData();}
     });
   };
 }
