@@ -392,7 +392,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.21-RC2.4.13-DASH-SNAPSHOT";
+const APP_VERSION = "2026.07.21-RC2.4.13-DASH-SNAPSHOT-HF1";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -631,7 +631,12 @@ async function rawPost(body, timeoutMs=30000){
 }
 async function apiCall(payload, timeoutMs=30000){
   const body=Object.assign({},payload,{accessToken:state.accessToken,accessScope:state.accessScope,clientId:state.clientId,clientVersion:APP_VERSION});
-  if(state.accessScope==="XE" && !body.maXe) body.maXe=XE;
+  if(body.type==="VIEW"){
+    body.viewScope=MODE==="dash"?"DASHBOARD":(MODE==="xe"?"XE":"KHO");
+    if(body.viewScope==="XE")body.maXe=XE;
+  }else if(state.accessScope==="XE" && !body.maXe){
+    body.maXe=XE;
+  }
   return rawPost(body,timeoutMs);
 }
 function configureAccessOverlay(){
@@ -794,6 +799,7 @@ async function loadDashboardDetails(){
 
 async function loadData(){
   if(!state.accessToken){$("ovAccess").classList.add("show");return;}
+  const requestSeq=++state.viewRequestSeq;
   const hadData=!!state.data;
   const previousTab=state.tab;
   setConnectionStatus("syncing",hadData?"Đang cập nhật dữ liệu nền…":"Đang tải dữ liệu…");
@@ -802,6 +808,7 @@ async function loadData(){
   if(!hadData)mainRoot().innerHTML='<div class="load">Đang tải dữ liệu…</div>';
   try{
     const j=await apiCall({type:"VIEW"},30000);
+    if(requestSeq!==state.viewRequestSeq)return;
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok")throw new Error(j.message||"Không tải được dữ liệu.");
     state.data=j;state.versionOk=!j.versionMismatch&&j.version===APP_VERSION;document.documentElement.dataset.appVersion=APP_VERSION;
@@ -817,6 +824,7 @@ async function loadData(){
     initUI();
     if(MODE==="dash")scheduleDashboardDetailsLoad_(80);
   }catch(err){
+    if(requestSeq!==state.viewRequestSeq)return;
     setConnectionStatus("offline",(err&&err.name==="AbortError"?"Server phản hồi quá lâu":"Mất kết nối")+" — "+(hadData?"giữ dữ liệu cũ":"chưa tải được dữ liệu"));
     if(!hadData){
       window.__ktvtActivePane=null;
