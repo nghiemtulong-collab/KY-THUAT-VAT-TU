@@ -262,6 +262,12 @@ body.dash header .hd-inner{max-width:760px}
 .load-more{width:100%;border:1.5px solid var(--line);border-radius:11px;background:var(--white);color:var(--deep-2);font-family:inherit;font-weight:800;font-size:13px;padding:11px;margin:6px 0 2px;cursor:pointer}
 .load-more:active{background:#FFF7EB}
 
+/* Connection status RC2.4.10 */
+.conn-status{display:none;align-items:center;gap:6px;margin-top:5px;font-size:10.5px;color:#AFC4BC}
+.conn-status.show{display:flex}.conn-dot{width:8px;height:8px;border-radius:50%;background:#AFC4BC;flex:0 0 auto}
+.conn-status.online .conn-dot{background:#52D18A}.conn-status.syncing .conn-dot{background:var(--safety)}.conn-status.offline .conn-dot{background:#FF6B61}
+.conn-status.offline{color:#FFD4D0}.conn-status.syncing{color:#FFE0B3}
+
 /* Dashboard heartbeat RC2.4.5 */
 .dash-live-alert{position:fixed;left:50%;top:86px;transform:translateX(-50%) translateY(-12px);width:min(720px,calc(100% - 28px));z-index:45;background:#FFF4E4;border:2px solid var(--safety);border-radius:12px;padding:11px 14px;box-shadow:0 5px 18px rgba(22,48,43,.22);opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease}
 .dash-live-alert.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
@@ -284,6 +290,7 @@ body.dash header .hd-inner{max-width:760px}
   <div class="hd-inner">
     <div class="hd-title">KỸ THUẬT VẬT TƯ <span class="hd-accent">ICD PHÚC LONG</span></div><button class="logout-btn" id="btnLogout" type="button">Đăng xuất</button>
     <div class="hd-sub" id="hdSub">Đang tải…</div>
+    <div class="conn-status" id="connStatus"><span class="conn-dot"></span><span id="connText">Chưa kết nối</span></div>
     <div class="xe-hero" id="xeHero" style="display:none">
       <span class="code" id="xeCode"></span><span class="loai" id="xeLoai"></span>
     </div>
@@ -362,7 +369,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.21-RC2.4.9B-HF1-TXN-INIT";
+const APP_VERSION = "2026.07.21-RC2.4.10-SERVER-STABILITY";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -396,7 +403,9 @@ const state = {
   dashAlertQueue:[], dashAlertActive:false, lastDashAlertSeq:0, lastDashPollSeq:0,
   cache:{}, panes:{}, tabDirty:{}, tonVisible:50,
   lastDashRenderSeq:-1, lastDashRenderDay:"", lastDashRenderAt:0,
-  renderMetrics:{}
+  renderMetrics:{},
+  connection:"idle",lastSuccessAt:0,lastRequestMs:0,lastServerMs:0,connectionFailures:0,
+  pollDelayMs:5000,pollRequestSeq:0,viewRequestSeq:0,connectionTicker:null
 };
 
 // Xóa PIN từng được các phiên bản cũ lưu trong trình duyệt.
@@ -496,6 +505,28 @@ function navHTML(cur){
   return ' · ' + L.join(' · ');
 }
 
+
+function setConnectionStatus(status, detail){
+  state.connection=status;
+  const box=document.getElementById("connStatus"),txt=document.getElementById("connText");if(!box||!txt)return;
+  box.className="conn-status show "+status;
+  if(status==="online")state.lastSuccessAt=Date.now();
+  txt.textContent=detail||connectionText_();
+}
+function connectionText_(){
+  if(state.connection==="syncing")return "Đang đồng bộ…";
+  if(state.connection==="offline")return "Mất kết nối — giữ dữ liệu cũ";
+  if(state.connection==="online"){
+    const age=state.lastSuccessAt?Math.max(0,Math.floor((Date.now()-state.lastSuccessAt)/1000)):0;
+    const perf=state.lastRequestMs?" · "+(state.lastRequestMs/1000).toFixed(1)+"s"+(state.lastServerMs?" (server "+(state.lastServerMs/1000).toFixed(1)+"s)":""):"";
+    return "Đã đồng bộ "+age+" giây trước"+perf;
+  }
+  return "Chưa kết nối";
+}
+function startConnectionTicker(){
+  if(state.connectionTicker)return;state.connectionTicker=setInterval(()=>{const t=document.getElementById("connText");if(t&&state.connection==="online")t.textContent=connectionText_();},1000);
+}
+
 /* ==================== API / ACCESS / LOAD ==================== */
 function randomId(prefix="id"){
   if(window.crypto && crypto.randomUUID) return prefix+"_"+crypto.randomUUID().replace(/-/g,"");
@@ -530,10 +561,13 @@ function switchAccessScope(scope){
   configureAccessOverlay();
 }
 async function rawPost(body, timeoutMs=30000){
-  const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),timeoutMs);
+  const started=performance.now(),ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),timeoutMs);
   try{
     const res=await fetch(SCRIPT_URL,{method:"POST",body:JSON.stringify(body),cache:"no-store",signal:ctl.signal});
-    try{return await res.json();}catch(_){throw new Error("Phản hồi backend không phải JSON hợp lệ.");}
+    let out;try{out=await res.json();}catch(_){throw new Error("Phản hồi backend không phải JSON hợp lệ.");}
+    out._clientTotalMs=Math.round((performance.now()-started)*10)/10;
+    state.lastRequestMs=out._clientTotalMs;state.lastServerMs=Number(out.perf&&out.perf.serverMs||0);
+    return out;
   }finally{clearTimeout(timer);}
 }
 async function apiCall(payload, timeoutMs=30000){
@@ -562,7 +596,7 @@ function showAccessError(msg){
 }
 function stopDashRefresh(){
   if(state.dashTimer){
-    clearInterval(state.dashTimer);
+    clearTimeout(state.dashTimer);
     state.dashTimer=null;
   }
   if(state.dashSafetyTimer){
@@ -579,6 +613,8 @@ function stopDashRefresh(){
   if(liveBox) liveBox.classList.remove("show","dead","repair","maintenance","checklist");
   state.refreshing=false;
   state.polling=false;
+  state.pollRequestSeq++;
+  state.viewRequestSeq++;
 }
 function queueDashLiveAlert(event){
   if(MODE!=="dash" || !event) return;
@@ -665,6 +701,7 @@ async function loginAccess(pin){
 }
 async function loadData(){
   if(!state.accessToken){$("ovAccess").classList.add("show");return;}
+  setConnectionStatus("syncing");startConnectionTicker();
   window.__ktvtActivePane=null;
   mainRoot().innerHTML='<div class="load">Đang tải dữ liệu…</div>';
   try{
@@ -679,8 +716,10 @@ async function loadData(){
       mainRoot().innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Không được gửi phiếu. Chờ GitHub/Apps Script deploy xong rồi Ctrl+F5.</div>';
       $("hdSub").textContent="Lệch phiên bản — đã khóa ghi dữ liệu";return;
     }
+    setConnectionStatus("online");
     initUI();
   }catch(err){
+    setConnectionStatus("offline");
     window.__ktvtActivePane=null;
     mainRoot().innerHTML='<div class="load">Không tải được dữ liệu — '+esc(err&&err.message?err.message:"kiểm tra mạng")+'. <a href="#" onclick="loadData();return false;">Bấm tải lại</a>.</div>';
   }
@@ -690,69 +729,49 @@ async function loadData(){
 // Hàm này bị thiếu ở RC2.4.1-P0 ban đầu, làm trang Kỹ thuật báo
 // "refreshViewSilently is not defined" ngay sau khi đăng nhập.
 async function refreshViewSilently(){
-  if(MODE!=="dash" || !state.accessToken || state.refreshing) return;
-  state.refreshing=true;
+  if(MODE!=="dash"||!state.accessToken||state.refreshing)return;
+  state.refreshing=true;const requestSeq=++state.viewRequestSeq;setConnectionStatus("syncing");
   try{
     const j=await apiCall({type:"VIEW"},30000);
+    if(requestSeq!==state.viewRequestSeq)return;
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
-    if(j.status!=="ok") return;
-    if(j.versionMismatch || j.version!==APP_VERSION){
-      state.versionOk=false;stopDashRefresh();
-      window.__ktvtActivePane=null;
-      mainRoot().innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Đã dừng tự cập nhật và khóa ghi dữ liệu. Ctrl+F5 sau khi deploy hoàn tất.</div>';
-      $("hdSub").textContent="Lệch phiên bản — đã khóa ghi dữ liệu";return;
-    }
-
-    const prevSeq=Number(state.data&&state.data.latestSeq||0);
-    const nextSeq=Number(j.latestSeq||0);
-    const day=todayISO();
-    const canSkip=prevSeq===nextSeq && state.lastDashRenderDay===day && (Date.now()-state.lastDashRenderAt)<300000;
-    if(canSkip){
-      state.data.updated=j.updated;
-      const updated=document.getElementById("dashUpdated");
-      if(updated) updated.firstChild.textContent="Cập nhật "+j.updated;
-      return;
-    }
-
+    if(j.status!=="ok")throw new Error(j.message||"Không tải được Dashboard.");
+    if(j.versionMismatch||j.version!==APP_VERSION){state.versionOk=false;stopDashRefresh();window.__ktvtActivePane=null;mainRoot().innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Đã dừng tự cập nhật và khóa ghi dữ liệu. Ctrl+F5 sau khi deploy hoàn tất.</div>';$('hdSub').textContent="Lệch phiên bản — đã khóa ghi dữ liệu";return;}
+    state.connectionFailures=0;state.pollDelayMs=5000;setConnectionStatus("online");
+    const prevSeq=Number(state.data&&state.data.latestSeq||0),nextSeq=Number(j.latestSeq||0),day=todayISO();
+    const canSkip=prevSeq===nextSeq&&state.lastDashRenderDay===day&&(Date.now()-state.lastDashRenderAt)<300000;
+    if(canSkip){state.data.updated=j.updated;const updated=document.getElementById("dashUpdated");if(updated)updated.firstChild.textContent="Cập nhật "+j.updated;return;}
     state.data=j;state.versionOk=true;prepareDataCache(j);renderDash();
-  }catch(_){
-    // Giữ dữ liệu cũ khi mạng chập chờn; tự thử lại ở chu kỳ kế tiếp.
-  }finally{state.refreshing=false;}
+  }catch(err){state.connectionFailures++;setConnectionStatus("offline",(err&&err.name==="AbortError"?"Server phản hồi quá lâu":"Mất kết nối")+" — giữ dữ liệu cũ");}
+  finally{state.refreshing=false;}
 }
 
 async function pollDashboardEvents(){
-  if(MODE!=="dash" || document.hidden || !state.accessToken || state.polling) return;
-  state.polling=true;
+  if(MODE!=="dash"||document.hidden||!state.accessToken||state.polling)return;
+  state.polling=true;const pollSeq=++state.pollRequestSeq;
   try{
     const sinceSeq=Math.max(0,Number(state.lastDashPollSeq||0));
     const j=await apiCall({type:"DASH_POLL",sinceSeq:sinceSeq},10000);
+    if(pollSeq!==state.pollRequestSeq)return;
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
-    if(j.status!=="ok") return;
-    if(j.versionMismatch || j.version!==APP_VERSION){
-      state.versionOk=false;stopDashRefresh();
-      window.__ktvtActivePane=null;
-      mainRoot().innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Đã dừng tự cập nhật và khóa ghi dữ liệu. Ctrl+F5 sau khi deploy hoàn tất.</div>';
-      $("hdSub").textContent="Lệch phiên bản — đã khóa ghi dữ liệu";return;
-    }
-
-    const events=Array.isArray(j.events)?j.events:[];
-    state.lastDashPollSeq=Math.max(sinceSeq,Number(j.latestSeq||0));
-    events
-      .filter(e=>e&&["BAO_HONG","SUA_CHUA","BAO_DUONG","CHECKLIST_DAU_CA"].includes(String(e.type||"").toUpperCase()))
-      .sort((a,b)=>Number(a.eventSeq||0)-Number(b.eventSeq||0))
-      .forEach(queueDashLiveAlert);
-
-    // Chỉ tải VIEW nặng khi sequence thực sự thay đổi.
-    if(j.changed || Number(j.latestSeq||0)!==sinceSeq) await refreshViewSilently();
-  }catch(_){
-    // Heartbeat lỗi tạm thời không xóa dữ liệu hiện có; chu kỳ sau sẽ thử lại.
-  }finally{state.polling=false;}
+    if(j.status!=="ok")throw new Error(j.message||"Heartbeat lỗi.");
+    if(j.versionMismatch||j.version!==APP_VERSION){state.versionOk=false;stopDashRefresh();window.__ktvtActivePane=null;mainRoot().innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Đã dừng tự cập nhật và khóa ghi dữ liệu. Ctrl+F5 sau khi deploy hoàn tất.</div>';$('hdSub').textContent="Lệch phiên bản — đã khóa ghi dữ liệu";return;}
+    state.connectionFailures=0;state.pollDelayMs=5000;setConnectionStatus("online");
+    const events=Array.isArray(j.events)?j.events:[];state.lastDashPollSeq=Math.max(sinceSeq,Number(j.latestSeq||0));
+    events.filter(e=>e&&["BAO_HONG","SUA_CHUA","BAO_DUONG","CHECKLIST_DAU_CA"].includes(String(e.type||"").toUpperCase())).sort((a,b)=>Number(a.eventSeq||0)-Number(b.eventSeq||0)).forEach(queueDashLiveAlert);
+    if(j.changed||Number(j.latestSeq||0)!==sinceSeq)await refreshViewSilently();
+  }catch(err){state.connectionFailures++;state.pollDelayMs=Math.min(60000,5000*Math.pow(2,Math.min(3,state.connectionFailures)));setConnectionStatus("offline",(err&&err.name==="AbortError"?"Heartbeat quá 10 giây":"Mất kết nối")+" — thử lại sau "+Math.round(state.pollDelayMs/1000)+" giây");}
+  finally{state.polling=false;scheduleDashPoll_();}
+}
+function scheduleDashPoll_(){
+  if(state.dashTimer){clearTimeout(state.dashTimer);state.dashTimer=null;}
+  if(MODE!=="dash"||document.hidden||!state.accessToken)return;
+  const jitter=Math.floor(Math.random()*800);state.dashTimer=setTimeout(pollDashboardEvents,state.pollDelayMs+jitter);
 }
 function startDashRefresh(){
-  if(MODE!=="dash" || document.hidden || !state.accessToken) return;
-  if(!state.dashTimer) state.dashTimer=setInterval(pollDashboardEvents,5000);
-  // Safety refresh bắt thay đổi do sửa tay trong Sheet, vì sửa tay không tăng eventSeq.
-  if(!state.dashSafetyTimer) state.dashSafetyTimer=setInterval(refreshViewSilently,300000);
+  if(MODE!=="dash"||document.hidden||!state.accessToken)return;
+  scheduleDashPoll_();
+  if(!state.dashSafetyTimer)state.dashSafetyTimer=setInterval(refreshViewSilently,300000);
 }
 
 function unreadNotifications(){
@@ -1807,10 +1826,11 @@ async function sendPending(){
       state.versionOk=false;state.sending=false;showDefiniteFail(j,"Phiên bản không đồng bộ; đã khóa gửi phiếu.");return;
     }
     if(j.status==="ok"){
-      state.sending=false;clearPin();
+      state.sending=false;clearPin();setConnectionStatus("online");
       $("doneIcon").textContent=j.replay?"🛡️":"✅";
       $("doneTitle").textContent=j.replay?"Phiếu đã tồn tại — không ghi trùng":"Đã gửi thành công";
-      $("doneMsg").textContent=cfg.doneMsg(j||{})+(j.txnId?" Mã giao dịch: "+j.txnId+".":"")+(j.recovered?" Hệ thống đã khôi phục kết quả từ lần gửi trước.":"");
+      const perfNote=j._clientTotalMs?" Thời gian: "+(j._clientTotalMs/1000).toFixed(1)+" giây"+(j.perf&&j.perf.serverMs?" (server "+(Number(j.perf.serverMs)/1000).toFixed(1)+" giây)":"")+".":"";
+      $("doneMsg").textContent=cfg.doneMsg(j||{})+(j.txnId?" Mã giao dịch: "+j.txnId+".":"")+(j.recovered?" Hệ thống đã khôi phục kết quả từ lần gửi trước.":"")+perfNote;
       $("docLinkWrap").innerHTML=j.docUrl?'<a href="'+esc(j.docUrl)+'" target="_blank" rel="noopener" class="doc-link">🖨 Mở phiếu đề xuất</a>':"";
       $("btnDoneOk").textContent="OK";
       $("btnDoneOk").onclick=()=>{clearPin();state.pending=null;$("ovDone").classList.remove("show");if(cfg.after)cfg.after();};
@@ -1818,7 +1838,7 @@ async function sendPending(){
     }
     state.sending=false;showDefiniteFail(j);
   }catch(err){
-    state.sending=false;clearPin();$("ovSending").classList.remove("show");
+    state.sending=false;clearPin();setConnectionStatus("offline");$("ovSending").classList.remove("show");
     // Không biết backend đã ghi hay chưa. Giữ nguyên requestId để retry an toàn.
     $("doneIcon").textContent="❓";$("doneTitle").textContent="Chưa xác định kết quả";
     $("doneMsg").textContent=(err&&err.name==="AbortError"?"Backend phản hồi quá 30 giây.":"Mạng bị gián đoạn.")+" Không lập phiếu mới. Nhập lại PIN và thử lại bằng đúng Request ID; backend sẽ không ghi trùng.";
@@ -1853,6 +1873,8 @@ $("btnAccess").onclick=async()=>{
 $("accessPin").addEventListener("keydown",e=>{if(e.key==="Enter")$("btnAccess").click();});
 $("btnLogout").onclick=()=>{stopDashRefresh();clearAccessToken(state.accessScope);location.reload();};
 window.addEventListener("focus",()=>{if(MODE==="dash"){startDashRefresh();pollDashboardEvents();}});
+window.addEventListener("online",()=>{setConnectionStatus("syncing","Mạng đã trở lại — đang đồng bộ…");if(MODE==="dash")pollDashboardEvents();else if(state.accessToken)loadData();});
+window.addEventListener("offline",()=>setConnectionStatus("offline","Thiết bị đang offline — giữ dữ liệu cũ"));
 document.addEventListener("visibilitychange",()=>{
   if(MODE!=="dash") return;
   if(document.hidden) stopDashRefresh();
