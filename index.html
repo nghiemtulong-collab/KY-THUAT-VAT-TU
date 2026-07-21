@@ -193,8 +193,12 @@ body.dash header .hd-inner{max-width:760px}
 .dash-live-alert{position:fixed;left:50%;top:86px;transform:translateX(-50%) translateY(-12px);width:min(720px,calc(100% - 28px));z-index:45;background:#FFF4E4;border:2px solid var(--safety);border-radius:12px;padding:11px 14px;box-shadow:0 5px 18px rgba(22,48,43,.22);opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease}
 .dash-live-alert.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
 .dash-live-alert.dead{background:#FDECEA;border-color:var(--danger)}
+.dash-live-alert.repair{background:#EAF6EF;border-color:var(--ok)}
+.dash-live-alert.maintenance{background:#EDF3FC;border-color:#2B4C8C}
 .dash-live-alert .ttl{font-size:13px;font-weight:800;color:var(--deep)}
 .dash-live-alert.dead .ttl{color:var(--danger)}
+.dash-live-alert.repair .ttl{color:var(--ok)}
+.dash-live-alert.maintenance .ttl{color:#2B4C8C}
 .dash-live-alert .msg{font-size:12.5px;color:var(--ink);margin-top:2px;overflow-wrap:anywhere}
 .dash-live-alert .meta{font-size:11px;color:var(--muted);margin-top:3px}
 
@@ -273,7 +277,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.21-RC2.4.5-DASH-POLL";
+const APP_VERSION = "2026.07.21-RC2.4.6-DASH-OPS-POLL";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -302,7 +306,7 @@ const state = {
   data:null, tab:null, slip:{}, slipKind:null, pending:null,
   accessToken:"", accessScope:INITIAL_ACCESS_SCOPE, clientId:"", versionOk:false, sending:false,
   dashTimer:null, dashSafetyTimer:null, dashAlertTimer:null, daType:"all", daDate:"", refreshing:false, polling:false,
-  lastDashAlertSeq:0,
+  dashAlertQueue:[], dashAlertActive:false, lastDashAlertSeq:0,
   cache:{}, panes:{}, tabDirty:{}, tonVisible:50,
   lastDashRenderSeq:-1, lastDashRenderDay:"", lastDashRenderAt:0,
   renderMetrics:{}
@@ -472,26 +476,75 @@ function stopDashRefresh(){
     clearInterval(state.dashSafetyTimer);
     state.dashSafetyTimer=null;
   }
+  if(state.dashAlertTimer){
+    clearTimeout(state.dashAlertTimer);
+    state.dashAlertTimer=null;
+  }
+  state.dashAlertQueue=[];
+  state.dashAlertActive=false;
+  const liveBox=document.getElementById("dashLiveAlert");
+  if(liveBox) liveBox.classList.remove("show","dead","repair","maintenance");
   state.refreshing=false;
   state.polling=false;
 }
-function showDashLiveAlert(event){
+function queueDashLiveAlert(event){
   if(MODE!=="dash" || !event) return;
+  const type=String(event.type||"").toUpperCase();
+  if(!["BAO_HONG","SUA_CHUA","BAO_DUONG"].includes(type)) return;
   const seq=Number(event.eventSeq||0);
   if(seq && seq<=state.lastDashAlertSeq) return;
   if(seq) state.lastDashAlertSeq=seq;
-
+  state.dashAlertQueue.push(event);
+  showNextDashLiveAlert();
+}
+function showNextDashLiveAlert(){
+  if(state.dashAlertActive || !state.dashAlertQueue.length || MODE!=="dash") return;
+  const event=state.dashAlertQueue.shift();
   const box=document.getElementById("dashLiveAlert");
-  if(!box) return;
-  const dead=/chết/i.test(event.tinhTrang||"");
-  box.classList.toggle("dead",dead);
-  document.getElementById("dashLiveTitle").textContent=(dead?"🔴 XE CHẾT MÁY":"🚨 BÁO HỎNG MỚI")+" — "+(event.maXe||"");
-  document.getElementById("dashLiveMsg").textContent=(event.moTa||"Có báo hỏng mới.")+(event.tinhTrang?" · "+event.tinhTrang:"");
-  document.getElementById("dashLiveMeta").textContent=[event.nguoi?"Người báo: "+event.nguoi:"",event.maBH||"",event.ts||""].filter(Boolean).join(" · ");
+  if(!box){state.dashAlertQueue=[];return;}
+
+  const type=String(event.type||"").toUpperCase();
+  const dead=type==="BAO_HONG" && /chết/i.test(event.tinhTrang||"");
+  let title="",msg="",meta=[],duration=7000,vibration=[120];
+
+  box.classList.remove("dead","repair","maintenance");
+  if(type==="BAO_HONG"){
+    if(dead) box.classList.add("dead");
+    title=(dead?"🔴 XE CHẾT MÁY":"🚨 BÁO HỎNG MỚI")+" — "+(event.maXe||"");
+    msg=(event.moTa||"Có báo hỏng mới.")+(event.tinhTrang?" · "+event.tinhTrang:"");
+    meta=[event.nguoi?"Người báo: "+event.nguoi:"",event.maBH||"",event.ts||""];
+    duration=dead?14000:9000;
+    vibration=dead?[250,120,250]:[160];
+  }else if(type==="SUA_CHUA"){
+    box.classList.add("repair");
+    title="🔧 ĐÃ GHI HOÀN THÀNH SỬA CHỮA — "+(event.maXe||"");
+    msg=(event.noiDung||"Đã ghi nội dung sửa chữa.")+(event.maBH?" · Sự cố "+event.maBH:"")+" · Đang chờ QC";
+    meta=[event.nguoi?"Người sửa: "+event.nguoi:"",event.repairId||event.txnId||"",event.ts||""];
+    duration=8000;
+    vibration=[100,70,100];
+  }else{
+    box.classList.add("maintenance");
+    title="🛠 ĐÃ GHI BẢO DƯỠNG — "+(event.maXe||"");
+    msg=(event.hangMuc||"Đã ghi bảo dưỡng")+(event.soGio!==""&&event.soGio!=null?" · "+event.soGio+"h":"")+(event.resetGio?" · RESET ĐỒNG HỒ":"");
+    meta=[event.nguoi?"Người ghi: "+event.nguoi:"",event.bdId||event.txnId||"",event.ts||""];
+    duration=7000;
+    vibration=[120];
+  }
+
+  document.getElementById("dashLiveTitle").textContent=title;
+  document.getElementById("dashLiveMsg").textContent=msg;
+  document.getElementById("dashLiveMeta").textContent=meta.filter(Boolean).join(" · ");
+  state.dashAlertActive=true;
   box.classList.add("show");
-  try{if(navigator.vibrate) navigator.vibrate(dead?[250,120,250]:[160]);}catch(_){ }
-  if(state.dashAlertTimer) clearTimeout(state.dashAlertTimer);
-  state.dashAlertTimer=setTimeout(()=>box.classList.remove("show"),dead?15000:10000);
+  try{if(navigator.vibrate) navigator.vibrate(vibration);}catch(_){ }
+  state.dashAlertTimer=setTimeout(()=>{
+    box.classList.remove("show");
+    state.dashAlertTimer=setTimeout(()=>{
+      state.dashAlertActive=false;
+      state.dashAlertTimer=null;
+      showNextDashLiveAlert();
+    },220);
+  },duration);
 }
 function requireRelogin(msg){
   stopDashRefresh();
@@ -583,7 +636,10 @@ async function pollDashboardEvents(){
     }
 
     const events=Array.isArray(j.events)?j.events:[];
-    events.filter(e=>e&&e.type==="BAO_HONG").sort((a,b)=>Number(a.eventSeq||0)-Number(b.eventSeq||0)).forEach(showDashLiveAlert);
+    events
+      .filter(e=>e&&["BAO_HONG","SUA_CHUA","BAO_DUONG"].includes(String(e.type||"").toUpperCase()))
+      .sort((a,b)=>Number(a.eventSeq||0)-Number(b.eventSeq||0))
+      .forEach(queueDashLiveAlert);
 
     // Chỉ tải VIEW nặng khi sequence thực sự thay đổi.
     if(j.changed || Number(j.latestSeq||0)!==sinceSeq) await refreshViewSilently();
@@ -602,7 +658,7 @@ function initUI(){
   const d = state.data;
   if(MODE === "dash"){
     document.body.classList.add("dash");
-    $("hdSub").innerHTML = "Bảng theo dõi tổng — kiểm tra báo hỏng mỗi 5 giây" + navHTML("dash");
+    $("hdSub").innerHTML = "Bảng theo dõi tổng — nhận báo hỏng, sửa chữa, bảo dưỡng mỗi 5 giây" + navHTML("dash");
     renderDash();
     state.lastDashAlertSeq=Number(d.latestSeq||0);
     startDashRefresh();
