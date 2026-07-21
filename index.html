@@ -392,7 +392,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.21-RC2.4.12-VIEW-PERFORMANCE";
+const APP_VERSION = "2026.07.21-RC2.4.13-DASH-SNAPSHOT";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -428,7 +428,8 @@ const state = {
   lastDashRenderSeq:-1, lastDashRenderDay:"", lastDashRenderAt:0,
   renderMetrics:{},
   connection:"idle",lastSuccessAt:0,lastRequestMs:0,lastServerMs:0,connectionFailures:0,
-  pollDelayMs:5000,pollRequestSeq:0,viewRequestSeq:0,connectionTicker:null
+  pollDelayMs:5000,pollRequestSeq:0,viewRequestSeq:0,connectionTicker:null,
+  dashboardDetailsLoading:false,dashboardDetailsRequestSeq:0,dashboardDetailsLoadedSeq:-1
 };
 
 // Xóa PIN từng được các phiên bản cũ lưu trong trình duyệt.
@@ -757,6 +758,40 @@ function requireRelogin(msg){
 async function loginAccess(pin){
   return rawPost({type:"AUTH_LOGIN",accessScope:state.accessScope,maXe:(state.accessScope==="XE"?XE:""),accessPin:pin,clientId:state.clientId,clientVersion:APP_VERSION},30000);
 }
+
+function mergeDashboardDetails_(details){
+  if(!state.data||MODE!=="dash")return;
+  state.data.history=details.history||state.data.history||{};
+  state.data.historyLoaded=true;
+  state.data.historyUpdated=details.updated||"";
+  state.data.historyCacheHit=details.cacheHit===true;
+  state.dashboardDetailsLoadedSeq=Number(details.latestSeq||0);
+  prepareDataCache(state.data);
+}
+function scheduleDashboardDetailsLoad_(delay){
+  if(MODE!=="dash"||!state.accessToken)return;
+  setTimeout(loadDashboardDetails,Math.max(0,Number(delay)||0));
+}
+async function loadDashboardDetails(){
+  if(MODE!=="dash"||!state.accessToken||state.dashboardDetailsLoading)return;
+  const requestSeq=++state.dashboardDetailsRequestSeq;
+  state.dashboardDetailsLoading=true;
+  try{
+    const j=await apiCall({type:"DASH_DETAILS"},30000);
+    if(requestSeq!==state.dashboardDetailsRequestSeq)return;
+    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
+    if(j.status!=="ok"||j.versionMismatch||j.version!==APP_VERSION)throw new Error(j.message||"Không tải được chi tiết Dashboard.");
+    const currentSeq=Number(state.data&&state.data.latestSeq||0),detailSeq=Number(j.latestSeq||0);
+    if(detailSeq<currentSeq){scheduleDashboardDetailsLoad_(800);return;}
+    mergeDashboardDetails_(j);
+    if(state.tab==="dash"||MODE==="dash")renderDash();
+  }catch(err){
+    try{console.warn("[KTVT] DASH_DETAILS",err);}catch(_){}
+  }finally{
+    state.dashboardDetailsLoading=false;
+  }
+}
+
 async function loadData(){
   if(!state.accessToken){$("ovAccess").classList.add("show");return;}
   const hadData=!!state.data;
@@ -780,6 +815,7 @@ async function loadData(){
     }
     setConnectionStatus("online",j.cacheHit?"Đã đồng bộ từ cache hiển thị":"Đã đồng bộ dữ liệu mới");
     initUI();
+    if(MODE==="dash")scheduleDashboardDetailsLoad_(80);
   }catch(err){
     setConnectionStatus("offline",(err&&err.name==="AbortError"?"Server phản hồi quá lâu":"Mất kết nối")+" — "+(hadData?"giữ dữ liệu cũ":"chưa tải được dữ liệu"));
     if(!hadData){
@@ -805,7 +841,10 @@ async function refreshViewSilently(){
     const prevSeq=Number(state.data&&state.data.latestSeq||0),nextSeq=Number(j.latestSeq||0),day=todayISO();
     const canSkip=prevSeq===nextSeq&&state.lastDashRenderDay===day&&(Date.now()-state.lastDashRenderAt)<300000;
     if(canSkip){state.data.updated=j.updated;const updated=document.getElementById("dashUpdated");if(updated)updated.firstChild.textContent="Cập nhật "+j.updated;return;}
-    state.data=j;state.versionOk=true;prepareDataCache(j);renderDash();
+    const oldHistory=state.data&&state.data.historyLoaded?state.data.history:null;
+    state.data=j;
+    if(oldHistory){state.data.history=oldHistory;state.data.historyLoaded=true;state.data.historyStale=true;}
+    state.versionOk=true;prepareDataCache(state.data);renderDash();scheduleDashboardDetailsLoad_(120);
   }catch(err){state.connectionFailures++;setConnectionStatus("offline",(err&&err.name==="AbortError"?"Server phản hồi quá lâu":"Mất kết nối")+" — giữ dữ liệu cũ");}
   finally{state.refreshing=false;}
 }
@@ -1689,7 +1728,8 @@ function renderDash(){
   const kdAll=(d.inspection||[]),kdOver=kdAll.filter(r=>r.status==="OVERDUE").sort((a,b)=>a.daysLeft-b.daysLeft),kdSoon=kdAll.filter(r=>r.status==="SOON").sort((a,b)=>a.daysLeft-b.daysLeft),kdMissing=kdAll.filter(r=>r.status==="NO_DATA"),kdValid=kdAll.filter(r=>r.status==="VALID");
   const checklistVehicles=d.xe.filter(x=>!!checklistGroupForVehicle(x));
   const checklistRows=(d.checklistToday||[]);
-  const vavoRecent=(d.history.VA_VO||[]).slice(0,20);
+  const historyLoaded=d.historyLoaded===true;
+  const vavoRecent=historyLoaded?(d.history.VA_VO||[]).slice(0,20):[];
   let dashShift=sessionStorage.getItem('ktvt_dash_shift')||'CA_1';if(!['CA_1','CA_2','CA_3'].includes(dashShift))dashShift='CA_1';
 
   const acts=[];
@@ -1711,7 +1751,7 @@ function renderDash(){
    +'<div class="count-card'+(pendingQC.length?' bad':'')+'"><div class="num">'+pendingQC.length+'</div><div class="lb">CHỜ QC</div></div>'
    +'<div class="count-card'+(over.length?' bad':'')+'"><div class="num">'+over.length+'</div><div class="lb">QUÁ HẠN BD</div></div>'
    +'<div class="count-card'+(low.length?' bad':'')+'"><div class="num">'+low.length+'</div><div class="lb">DƯỚI MIN</div></div></div>'
-   +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px"><div class="dash-note" id="dashUpdated">Cập nhật '+esc(d.updated)+'</div><button class="seen-btn" id="btnOpenNotifications">Phiếu mới '+(unread.length?'<span class="notif-count">'+unread.length+'</span>':'0')+'</button></div>';
+   +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px"><div class="dash-note" id="dashUpdated">Cập nhật '+esc(d.updated)+(historyLoaded?'':' · đang tải lịch sử nền…')+'</div><button class="seen-btn" id="btnOpenNotifications">Phiếu mới '+(unread.length?'<span class="notif-count">'+unread.length+'</span>':'0')+'</button></div>';
 
   if(unread.length){
     html+='<div class="notif-box"><div class="notif-head"><b>🔔 '+unread.length+' PHIẾU MỚI</b><button class="notif-link" id="btnNotifAll">Xem tất cả</button></div>'
@@ -1745,8 +1785,9 @@ function renderDash(){
   if(clMissing.length)html+='<div class="hist-row"><div class="top"><span><span class="hist-tag d">CHƯA KIỂM</span>'+clMissing.map(x=>'<a href="'+base+'?xe='+encodeURIComponent(x.ma)+'" style="color:var(--deep-2);margin-right:8px">'+esc(x.ma)+'</a>').join('')+'</span></div><div class="sub">Chưa có checklist '+esc(shiftLabel(dashShift))+' hôm nay.</div></div>';
 
   html+='<div class="sec-t">VÁ VỎ GẦN ĐÂY</div>';
-  if(!vavoRecent.length)html+='<div class="empty-note">Chưa có ghi nhận vá vỏ.</div>';
-  vavoRecent.slice(0,10).forEach(r=>{html+='<div class="hist-row"><div class="top"><span><span class="hist-tag d">VÁ VỎ</span><b>'+esc(r.maXe)+'</b> — '+esc(r.noiDung)+'</span><b>'+esc(r.ngay)+'</b></div><div class="sub">Tài xế '+esc(r.taiXe)+(r.ghiChu?' · '+esc(r.ghiChu):'')+' · '+esc(r.txnId||'')+'</div></div>';});
+  if(!historyLoaded)html+='<div class="empty-note">Đang tải lịch sử vá vỏ ở nền…</div>';
+  else if(!vavoRecent.length)html+='<div class="empty-note">Chưa có ghi nhận vá vỏ.</div>';
+  if(historyLoaded)vavoRecent.slice(0,10).forEach(r=>{html+='<div class="hist-row"><div class="top"><span><span class="hist-tag d">VÁ VỎ</span><b>'+esc(r.maXe)+'</b> — '+esc(r.noiDung)+'</span><b>'+esc(r.ngay)+'</b></div><div class="sub">Tài xế '+esc(r.taiXe)+(r.ghiChu?' · '+esc(r.ghiChu):'')+' · '+esc(r.txnId||'')+'</div></div>';});
 
   html+='<div class="sec-t">SỰ CỐ ĐANG MỞ ('+open.length+')</div>';
   if(!open.length)html+='<div class="empty-note">Không có sự cố mở.</div>';
@@ -1767,14 +1808,24 @@ function renderDash(){
   gio.forEach(h=>{html+='<tr><td><b>'+esc(h.maXe)+'</b></td><td>'+esc(h.hangMuc)+'</td>'+(h.noBase?'<td colspan="2"><span class="tag nobase">CHƯA CÓ MỐC</span></td>':'<td>'+h.lastGio+'h'+(h.lastNgay?' ('+esc(h.lastNgay)+')':'')+'</td><td><b>'+h.nextGio+'h</b></td>')+'</tr>';});html+='</table>';
   if(low.length){html+='<div class="sec-t">VẬT TƯ DƯỚI NGƯỠNG ('+low.length+')</div>';low.forEach(r=>{html+='<div class="stock-row low"><div><div class="nm">'+esc(r.ten)+'</div><div class="cd">'+esc(r.ma)+' · Min '+r.min+'</div></div><div class="ton">'+r.ton+' <small>'+esc(r.dvt)+'</small></div></div>';});}
 
+  if(historyLoaded){
   html+='<div class="sec-t">NHẬT KÝ HOẠT ĐỘNG — hôm nay '+todayCount+' phiếu</div><div class="chips" id="daChips"><button data-t="all">Tất cả</button><button data-t="bh">Báo hỏng</button><button data-t="x">Xuất</button><button data-t="sc">Sửa chữa</button><button data-t="qc">QC</button><button data-t="n">Nhập</button><button data-t="bd">Bảo dưỡng</button><button data-t="cl">Checklist</button><button data-t="vv">Vá vỏ</button><button data-t="kd">Kiểm định</button><button data-t="d">Đề xuất</button></div>'
-    +'<div class="search-box" style="display:flex;gap:8px;padding-top:0"><input type="date" id="daDate" style="flex:1;border:2px solid var(--line);border-radius:12px;padding:10px 12px;font-family:inherit;font-size:15px;background:var(--white)"><button id="daDateAll" class="seen-btn">Mọi ngày</button></div><div class="hint">Không lọc ngày: 50 dòng gần nhất.</div><div id="daList"></div>';
-  $("main").innerHTML=html;
-  document.querySelectorAll('[data-dshift]').forEach(btn=>btn.onclick=()=>{sessionStorage.setItem('ktvt_dash_shift',btn.dataset.dshift);renderDash();});
-  document.querySelectorAll("#daChips button").forEach(b=>{b.classList.toggle("on",b.dataset.t===state.daType);b.onclick=()=>{state.daType=b.dataset.t;document.querySelectorAll("#daChips button").forEach(x=>x.classList.toggle("on",x===b));renderDaList();};});
-  if(state.daDate)$("daDate").value=state.daDate;$("daDate").addEventListener("change",()=>{state.daDate=$("daDate").value;renderDaList();});$("daDateAll").onclick=()=>{state.daDate="";$("daDate").value="";renderDaList();};
-  function renderDaList(){let list=state.dashActs.filter(a=>state.daType==="all"||a.t===state.daType);const df=$("daDate").value;if(df)list=list.filter(a=>a.ngay===isoToVN(df));else list=list.slice(0,50);const box=$("daList");box.innerHTML="";if(!list.length){box.innerHTML='<div class="empty-note">Không có phiếu khớp bộ lọc.</div>';return;}list.forEach(a=>box.insertAdjacentHTML("beforeend",'<div class="hist-row'+(a.neg?' neg':'')+'"><div class="top"><span>'+a.tag+a.top+'</span><b>'+esc(a.ngay)+'</b></div><div class="sub">Gửi '+esc(a.ts)+' · '+a.sub+'</div></div>'));}
-  renderDaList();
+      +'<div class="search-box" style="display:flex;gap:8px;padding-top:0"><input type="date" id="daDate" style="flex:1;border:2px solid var(--line);border-radius:12px;padding:10px 12px;font-family:inherit;font-size:15px;background:var(--white)"><button id="daDateAll" class="seen-btn">Mọi ngày</button></div><div class="hint">Không lọc ngày: 50 dòng gần nhất.</div><div id="daList"></div>';
+    $("main").innerHTML=html;
+    document.querySelectorAll('[data-dshift]').forEach(btn=>btn.onclick=()=>{sessionStorage.setItem('ktvt_dash_shift',btn.dataset.dshift);renderDash();});
+    document.querySelectorAll("#daChips button").forEach(b=>{b.classList.toggle("on",b.dataset.t===state.daType);b.onclick=()=>{state.daType=b.dataset.t;document.querySelectorAll("#daChips button").forEach(x=>x.classList.toggle("on",x===b));renderDaList();};});
+    if(state.daDate)$("daDate").value=state.daDate;$("daDate").addEventListener("change",()=>{state.daDate=$("daDate").value;renderDaList();});$("daDateAll").onclick=()=>{state.daDate="";$("daDate").value="";renderDaList();};
+    function renderDaList(){let list=state.dashActs.filter(a=>state.daType==="all"||a.t===state.daType);const df=$("daDate").value;if(df)list=list.filter(a=>a.ngay===isoToVN(df));else list=list.slice(0,50);const box=$("daList");box.innerHTML="";if(!list.length){box.innerHTML='<div class="empty-note">Không có phiếu khớp bộ lọc.</div>';return;}list.forEach(a=>box.insertAdjacentHTML("beforeend",'<div class="hist-row'+(a.neg?' neg':'')+'"><div class="top"><span>'+a.tag+a.top+'</span><b>'+esc(a.ngay)+'</b></div><div class="sub">Gửi '+esc(a.ts)+' · '+a.sub+'</div></div>'));}
+    renderDaList();
+  }else{
+    html+='<div class="sec-t">NHẬT KÝ HOẠT ĐỘNG</div><div class="empty-note">Đang tải nhật ký hoạt động ở nền… Dashboard phía trên vẫn sử dụng bình thường.</div>';
+    $("main").innerHTML=html;
+    document.querySelectorAll('[data-dshift]').forEach(btn=>btn.onclick=()=>{sessionStorage.setItem('ktvt_dash_shift',btn.dataset.dshift);renderDash();});
+    $("btnOpenNotifications").onclick=openNotificationInbox;
+    const btnAll=document.getElementById("btnNotifAll");if(btnAll)btnAll.onclick=openNotificationInbox;
+    bindNotificationButtons(mainRoot());
+    return;
+  }
   $("btnOpenNotifications").onclick=openNotificationInbox;
   const btnAll=document.getElementById("btnNotifAll");if(btnAll)btnAll.onclick=openNotificationInbox;
   bindNotificationButtons(mainRoot());
