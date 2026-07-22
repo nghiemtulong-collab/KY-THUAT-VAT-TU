@@ -154,6 +154,11 @@ body.adjusting .fbox.slipbox .fbox-head{background:var(--danger)}
 .alloc-row{display:flex;align-items:center;gap:8px;padding:8px 11px;border-top:1px dashed var(--line)}
 .alloc-row label{flex:1;font-size:12.5px;font-weight:700}.alloc-row input{width:76px;border:1.5px solid var(--line);border-radius:8px;padding:8px;text-align:center;font-family:inherit;font-weight:800}
 .scope-actions{display:flex;gap:7px;margin-top:8px}.scope-actions button{flex:1;border:1.5px solid var(--line);background:var(--white);border-radius:9px;padding:8px;font-family:inherit;font-size:12px;font-weight:800;color:var(--deep-2)}
+.xuat-other-box{margin-top:8px;border:1.5px solid var(--safety);background:#FFF7EB;border-radius:10px;padding:10px}
+.xuat-other-box label{display:block;font-size:12.5px;font-weight:800;color:var(--deep-2);margin-bottom:5px}
+.xuat-other-box input{width:100%;border:1.5px solid var(--line);border-radius:9px;padding:10px 11px;font-family:inherit;font-size:14px;background:var(--white)}
+.xuat-other-box input:focus{outline:none;border-color:var(--safety)}
+.xuat-other-box .hint{margin:5px 0 0}
 @media(max-width:380px){.vehicle-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.multi-check-grid{grid-template-columns:1fr}}
 
 /* Tồn kho */
@@ -392,7 +397,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.21-RC2.4.13-DASH-SNAPSHOT-HF1";
+const APP_VERSION = "2026.07.22-RC2.4.14-XUAT-OTHER-HF1";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -420,7 +425,7 @@ const NHOM_ORDER = ["MÁY XN","ĐIỆN XN","MÁY ĐK","ĐIỆN ĐK","CƠ KHÍ","
 
 const state = {
   data:null, tab:null, slip:{}, slipKind:null, pending:null,
-  xuatCategories:{}, xuatVehicles:{}, xuatAlloc:{},
+  xuatCategories:{}, xuatVehicles:{}, xuatAlloc:{}, xuatOther:"",
   accessToken:"", accessScope:INITIAL_ACCESS_SCOPE, clientId:"", versionOk:false, sending:false,
   dashTimer:null, dashSafetyTimer:null, dashAlertTimer:null, daType:"all", daDate:"", refreshing:false, polling:false,
   dashAlertQueue:[], dashAlertActive:false, lastDashAlertSeq:0, lastDashPollSeq:0,
@@ -986,7 +991,7 @@ function buildTabs(list){
 }
 
 function openTab(id){
-  state.tab=id;state.slip={};state.slipKind=null;state.xuatCategories={};state.xuatVehicles={};state.xuatAlloc={};document.body.classList.remove("adjusting");$("bar").classList.remove("show");
+  state.tab=id;state.slip={};state.slipKind=null;state.xuatCategories={};state.xuatVehicles={};state.xuatAlloc={};state.xuatOther="";document.body.classList.remove("adjusting");$("bar").classList.remove("show");
   const fn={hoso:renderHoSo,baohong:renderBaoHong,suachua:renderSuaChua,baoduong:renderBaoDuong,checklist:renderChecklist,vavo:renderVaVo,ton:renderTon,xuat:renderXuat,nhap:renderNhap,dexuat:renderDeXuat,lichsu:renderLichSu,qc:renderQC}[id];
   if(!fn) return;
 
@@ -1567,6 +1572,7 @@ function renderTonList(){
 
 /* ==================== XUẤT KHO NHIỀU HẠNG MỤC/PHƯƠNG TIỆN ==================== */
 const HANG_MUC_XUAT = ["XE NÂNG HÀNG","XE NÂNG RỖNG","ĐẦU KÉO","CẨU KHUNG","CẨU SUMITOMO","KHÁC"];
+const XUAT_OTHER_KEY = "__KTVT_XUAT_OTHER__"; // key nội bộ, không ghi xuống Sheet
 function xuatCategoryForVehicle(x){
   const n=stripAccent((x&&x.loai)||"");
   if(n.includes("xe nang hang"))return "XE NÂNG HÀNG";
@@ -1576,7 +1582,19 @@ function xuatCategoryForVehicle(x){
   if(n.includes("cau sumitomo"))return "CẨU SUMITOMO";
   return "KHÁC";
 }
-function selectedXuatVehicles(){return Object.keys(state.xuatVehicles).filter(k=>state.xuatVehicles[k]);}
+function normalizedXuatOtherText(){return String(state.xuatOther||"").trim().replace(/\s+/g," ");}
+function selectedXuatVehicles(){
+  const out=Object.keys(state.xuatVehicles).filter(k=>state.xuatVehicles[k]);
+  if(state.xuatCategories["KHÁC"]&&normalizedXuatOtherText())out.push(XUAT_OTHER_KEY);
+  return out;
+}
+function xuatVehicleDisplay(v){return v===XUAT_OTHER_KEY?"KHÁC: "+normalizedXuatOtherText():v;}
+function xuatVehiclePayload(v){return xuatVehicleDisplay(v);}
+function xuatCategoryForSelected(v){
+  if(v===XUAT_OTHER_KEY)return "KHÁC";
+  const x=state.data.xe.find(z=>z.ma===v);
+  return x?xuatCategoryForVehicle(x):"";
+}
 function xuatCategoriesHTML(){
   return '<div class="multi-check-grid">'+HANG_MUC_XUAT.map(h=>'<label class="multi-check'+(state.xuatCategories[h]?' on':'')+'"><input type="checkbox" data-xcat="'+esc(h)+'" '+(state.xuatCategories[h]?'checked':'')+'><span>'+esc(h)+'</span></label>').join('')+'</div>';
 }
@@ -1588,8 +1606,13 @@ function renderXuatVehicleChooser(){
   cats.forEach(cat=>{
     const list=state.data.xe.filter(x=>xuatCategoryForVehicle(x)===cat);
     html+='<div class="scope-group"><div class="scope-group-title">'+esc(cat)+' ('+list.length+')</div>';
-    if(!list.length)html+='<div class="hint">Không có phương tiện trong danh mục.</div>';
-    else html+='<div class="vehicle-grid">'+list.map(x=>'<label class="vehicle-pick'+(state.xuatVehicles[x.ma]?' on':'')+'"><input type="checkbox" data-xvehicle="'+esc(x.ma)+'" '+(state.xuatVehicles[x.ma]?'checked':'')+'><span>'+esc(x.ma)+'</span></label>').join('')+'</div>';
+    if(list.length)html+='<div class="vehicle-grid">'+list.map(x=>'<label class="vehicle-pick'+(state.xuatVehicles[x.ma]?' on':'')+'"><input type="checkbox" data-xvehicle="'+esc(x.ma)+'" '+(state.xuatVehicles[x.ma]?'checked':'')+'><span>'+esc(x.ma)+'</span></label>').join('')+'</div>';
+    else if(cat!=="KHÁC")html+='<div class="hint">Không có phương tiện trong danh mục.</div>';
+    if(cat==="KHÁC"){
+      html+='<div class="xuat-other-box"><label for="xkOtherTarget">Đối tượng sử dụng / nội dung KHÁC</label>'
+        +'<input type="text" id="xkOtherTarget" maxlength="80" value="'+esc(state.xuatOther||"")+'" placeholder="Vd: Biển báo cầu cảng, công trình phụ trợ…">'
+        +'<div class="hint">Nhập khi vật tư không cấp cho phương tiện trong danh mục. Hệ thống sẽ ghi dạng “KHÁC: nội dung”.</div></div>';
+    }
     html+='</div>';
   });
   html+='<div class="scope-actions"><button type="button" id="xkSelectAll">Chọn tất cả đang hiện</button><button type="button" id="xkClearVehicles">Bỏ chọn phương tiện</button></div>';
@@ -1599,8 +1622,13 @@ function renderXuatVehicleChooser(){
     el.closest('.vehicle-pick').classList.toggle('on',el.checked);
     renderXuatAllocation();
   });
+  const other=$("xkOtherTarget");
+  if(other){
+    other.oninput=()=>{state.xuatOther=other.value;renderXuatAllocation();};
+    other.onchange=()=>{state.xuatOther=normalizedXuatOtherText();other.value=state.xuatOther;renderXuatAllocation();};
+  }
   const all=$("xkSelectAll");if(all)all.onclick=()=>{cats.forEach(cat=>state.data.xe.filter(x=>xuatCategoryForVehicle(x)===cat).forEach(x=>state.xuatVehicles[x.ma]=true));renderXuatVehicleChooser();};
-  const clear=$("xkClearVehicles");if(clear)clear.onclick=()=>{state.xuatVehicles={};state.xuatAlloc={};renderXuatVehicleChooser();};
+  const clear=$("xkClearVehicles");if(clear)clear.onclick=()=>{state.xuatVehicles={};state.xuatOther="";state.xuatAlloc={};renderXuatVehicleChooser();};
   renderXuatAllocation();
 }
 function normalizeXuatAllocState(){
@@ -1618,12 +1646,12 @@ function renderXuatAllocation(){
   const box=$("xkAllocBox");if(!box)return;
   normalizeXuatAllocState();
   const vehicles=selectedXuatVehicles(), items=Object.values(state.slip);
-  if(!vehicles.length){box.innerHTML='<div class="empty-note">Chọn phương tiện trước khi phân bổ vật tư.</div>';return;}
-  if(!items.length){box.innerHTML='<div class="empty-note">Thêm vật tư vào phiếu để nhập số lượng cho từng xe.</div>';return;}
+  if(!vehicles.length){box.innerHTML='<div class="empty-note">Chọn phương tiện hoặc nhập nội dung KHÁC trước khi phân bổ vật tư.</div>';return;}
+  if(!items.length){box.innerHTML='<div class="empty-note">Thêm vật tư vào phiếu để nhập số lượng cho từng đối tượng.</div>';return;}
   box.innerHTML=items.map(it=>{
     const target=Math.abs(Number(it.qty)||0), alloc=state.xuatAlloc[it.ma]||{}, sum=vehicles.reduce((s,v)=>s+Number(alloc[v]||0),0), bad=sum!==target;
     return '<div class="alloc-card"><div class="alloc-head'+(bad?' bad':'')+'"><span>'+esc(it.ten)+' · tổng '+target+' '+esc(it.dvt)+'</span><span>Đã chia '+sum+'/'+target+'</span></div>'
-      +vehicles.map(v=>'<div class="alloc-row"><label>'+esc(v)+'</label><input type="number" min="0" max="999999" step="1" inputmode="numeric" data-alloc-ma="'+esc(it.ma)+'" data-alloc-xe="'+esc(v)+'" value="'+Number(alloc[v]||0)+'"></div>').join('')+'</div>';
+      +vehicles.map(v=>'<div class="alloc-row"><label>'+esc(xuatVehicleDisplay(v))+'</label><input type="number" min="0" max="999999" step="1" inputmode="numeric" data-alloc-ma="'+esc(it.ma)+'" data-alloc-xe="'+esc(v)+'" value="'+Number(alloc[v]||0)+'"></div>').join('')+'</div>';
   }).join('');
   box.querySelectorAll('[data-alloc-ma]').forEach(inp=>inp.onchange=()=>{
     let q=parseInt(inp.value,10);if(!Number.isFinite(q)||q<0)q=0;if(q>999999)q=999999;
@@ -1634,16 +1662,19 @@ function renderXuatAllocation(){
 function collectXuatAllocations(list,isAdjustment){
   const cats=HANG_MUC_XUAT.filter(h=>state.xuatCategories[h]);
   if(!cats.length){alert('Chọn ít nhất một hạng mục xuất.');return null;}
-  const vehicles=selectedXuatVehicles();if(!vehicles.length){alert('Chọn ít nhất một phương tiện.');return null;}
-  for(const cat of cats){if(!vehicles.some(v=>{const x=state.data.xe.find(z=>z.ma===v);return x&&xuatCategoryForVehicle(x)===cat;})){alert('Hạng mục '+cat+' chưa chọn phương tiện nào.');return null;}}
+  if(state.xuatCategories["KHÁC"]&&!normalizedXuatOtherText()&&!Object.keys(state.xuatVehicles).some(v=>state.xuatVehicles[v]&&xuatCategoryForSelected(v)==="KHÁC")){
+    alert('Mục KHÁC chưa có thông tin. Nhập “Đối tượng sử dụng / nội dung KHÁC” hoặc chọn phương tiện KHÁC trong danh mục.');return null;
+  }
+  const vehicleKeys=selectedXuatVehicles();if(!vehicleKeys.length){alert('Chọn ít nhất một phương tiện hoặc nhập nội dung cho mục KHÁC.');return null;}
+  for(const cat of cats){if(!vehicleKeys.some(v=>xuatCategoryForSelected(v)===cat)){alert('Hạng mục '+cat+' chưa chọn phương tiện hoặc chưa nhập nội dung.');return null;}}
   const used={};const out=[];
   for(const it of list){
     const target=Math.abs(Number(it.qty)||0), alloc=state.xuatAlloc[it.ma]||{};let sum=0;
-    vehicles.forEach(v=>{const q=Math.max(0,parseInt(alloc[v]||0,10)||0);sum+=q;if(q>0){used[v]=true;out.push({ma:it.ma,maXe:v,qty:isAdjustment?-q:q});}});
+    vehicleKeys.forEach(v=>{const q=Math.max(0,parseInt(alloc[v]||0,10)||0);sum+=q;if(q>0){used[v]=true;out.push({ma:it.ma,maXe:xuatVehiclePayload(v),qty:isAdjustment?-q:q});}});
     if(sum!==target){alert('Vật tư '+it.ten+': tổng phân bổ phải bằng '+target+' '+it.dvt+', hiện là '+sum+'.');return null;}
   }
-  const unused=vehicles.filter(v=>!used[v]);if(unused.length){alert('Các phương tiện chưa được phân bổ vật tư: '+unused.join(', ')+'.');return null;}
-  return {vehicles,allocations:out,categories:cats};
+  const unused=vehicleKeys.filter(v=>!used[v]);if(unused.length){alert('Các đối tượng chưa được phân bổ vật tư: '+unused.map(xuatVehicleDisplay).join(', ')+'.');return null;}
+  return {vehicles:vehicleKeys.map(xuatVehiclePayload),allocations:out,categories:cats};
 }
 function renderXuat(){
   const dl = '<datalist id="dlNhan">' + TO_TRUONG.map(t=>'<option value="'+esc(t.split(" (")[0])+'">').join("") + '</datalist>';
@@ -1662,7 +1693,7 @@ function renderXuat(){
   bindSlipSearch("xk"); bindAdjust();
   $("xkCategoryBox").querySelectorAll('[data-xcat]').forEach(el=>el.onchange=()=>{
     state.xuatCategories[el.dataset.xcat]=el.checked;el.closest('.multi-check').classList.toggle('on',el.checked);
-    if(!el.checked){state.data.xe.filter(x=>xuatCategoryForVehicle(x)===el.dataset.xcat).forEach(x=>{delete state.xuatVehicles[x.ma];Object.values(state.xuatAlloc).forEach(a=>delete a[x.ma]);});}
+    if(!el.checked){state.data.xe.filter(x=>xuatCategoryForVehicle(x)===el.dataset.xcat).forEach(x=>{delete state.xuatVehicles[x.ma];Object.values(state.xuatAlloc).forEach(a=>delete a[x.ma]);});if(el.dataset.xcat==="KHÁC"){state.xuatOther="";Object.values(state.xuatAlloc).forEach(a=>delete a[XUAT_OTHER_KEY]);}}
     renderXuatVehicleChooser();
   });
   renderXuatVehicleChooser();
