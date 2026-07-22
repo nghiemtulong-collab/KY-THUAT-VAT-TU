@@ -412,7 +412,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.22-RC2.4.17-BACKUP-SERVER-HF2";
+const APP_VERSION = "2026.07.22-RC2.4.17-REQUEST-TIMEOUT-HF1";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -640,13 +640,23 @@ function switchAccessScope(scope){
   configureAccessOverlay();
 }
 async function rawPost(body, timeoutMs=30000){
-  const started=performance.now(),ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),timeoutMs);
+  const started=performance.now(),ctl=new AbortController();
+  let timedOut=false;
+  const timer=setTimeout(()=>{timedOut=true;ctl.abort();},timeoutMs);
   try{
     const res=await fetch(SCRIPT_URL,{method:"POST",body:JSON.stringify(body),cache:"no-store",signal:ctl.signal});
     let out;try{out=await res.json();}catch(_){throw new Error("Phản hồi backend không phải JSON hợp lệ.");}
     out._clientTotalMs=Math.round((performance.now()-started)*10)/10;
     state.lastRequestMs=out._clientTotalMs;state.lastServerMs=Number(out.perf&&out.perf.serverMs||0);
     return out;
+  }catch(err){
+    if(timedOut||(err&&err.name==="AbortError")){
+      const timeoutError=new Error("Backend phản hồi quá "+Math.ceil(timeoutMs/1000)+" giây. Vui lòng tải lại trang và kiểm tra trạng thái trước khi thao tác lại.");
+      timeoutError.name="AbortError";
+      timeoutError.timeoutMs=timeoutMs;
+      throw timeoutError;
+    }
+    throw err;
   }finally{clearTimeout(timer);}
 }
 async function apiCall(payload, timeoutMs=30000){
@@ -943,15 +953,24 @@ function openNotificationInbox(){
   document.getElementById('ovNotifications').classList.add('show');
 }
 async function markNotificationsSeen(ids, markAll){
+  const actionButtons=Array.from(document.querySelectorAll('[data-notif-seen],#btnNotifMarkAll'));
+  actionButtons.forEach(btn=>btn.disabled=true);
   try{
-    const j=await apiCall({type:'MARK_NOTIFICATIONS_SEEN',notificationIds:ids||[],markAll:markAll===true,viewer:'Bình'},30000);
+    const j=await apiCall({type:'MARK_NOTIFICATIONS_SEEN',notificationIds:ids||[],markAll:markAll===true,viewer:'Bình'},45000);
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok") throw new Error(j.message||"Không đánh dấu được phiếu.");
     const idSet=new Set(ids||[]);
     (state.data.notifications||[]).forEach(n=>{if(markAll||idSet.has(n.notificationId)){n.status='SEEN';n.seenAt=j.checkedAt||'';n.viewer='Bình';}});
     document.getElementById('ovNotifications').classList.remove('show');
     renderDash();
-  }catch(err){alert(err&&err.message?err.message:'Không kết nối được backend.');}
+  }catch(err){
+    const msg=err&&err.name==="AbortError"
+      ? 'Backend phản hồi quá 45 giây. Trạng thái “Đã xem” chưa xác định; tải lại Dashboard để kiểm tra trước khi bấm lại.'
+      : (err&&err.message?err.message:'Không kết nối được backend.');
+    alert(msg);
+  }finally{
+    actionButtons.forEach(btn=>btn.disabled=false);
+  }
 }
 document.getElementById('btnNotifClose').onclick=()=>document.getElementById('ovNotifications').classList.remove('show');
 document.getElementById('btnNotifMarkAll').onclick=()=>markNotificationsSeen([],true);
@@ -2097,7 +2116,7 @@ async function sendPending(){
   state.sending=true;$("btnConfirm").disabled=true;$("btnConfirm").textContent="Đang gửi…";
   clearPin();$("ovConfirm").classList.remove("show");$("ovSending").classList.add("show");
   try{
-    const j=await apiCall(payload,30000);
+    const j=await apiCall(payload,45000);
     $("ovSending").classList.remove("show");
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){state.sending=false;$("ovSending").classList.remove("show");requireRelogin(j.message);return;}
     if(j.status==="wrong_pin"||j.status==="locked"){
@@ -2124,7 +2143,7 @@ async function sendPending(){
     state.sending=false;clearPin();setConnectionStatus("offline");$("ovSending").classList.remove("show");
     // Không biết backend đã ghi hay chưa. Giữ nguyên requestId để retry an toàn.
     $("doneIcon").textContent="❓";$("doneTitle").textContent="Chưa xác định kết quả";
-    $("doneMsg").textContent=(err&&err.name==="AbortError"?"Backend phản hồi quá 30 giây.":"Mạng bị gián đoạn.")+" Không lập phiếu mới. Nhập lại PIN và thử lại bằng đúng Request ID; backend sẽ không ghi trùng.";
+    $("doneMsg").textContent=(err&&err.name==="AbortError"?"Backend phản hồi quá 45 giây.":"Mạng bị gián đoạn.")+" Không lập phiếu mới. Nhập lại PIN và thử lại bằng đúng Request ID; backend sẽ không ghi trùng.";
     $("docLinkWrap").innerHTML="";$("btnDoneOk").textContent="Nhập PIN và thử lại an toàn";
     $("btnDoneOk").onclick=()=>{$("ovDone").classList.remove("show");$("btnConfirm").disabled=false;$("btnConfirm").textContent="Gửi lại an toàn";$("pinErr").textContent="Đang dùng lại Request ID cũ để chống ghi trùng.";$("pinErr").style.display="block";$("ovConfirm").classList.add("show");};
     $("ovDone").classList.add("show");
