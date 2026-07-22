@@ -36,6 +36,21 @@ header{background:var(--deep);color:var(--white);padding:14px;position:sticky;to
 .pane.on{display:block}
 .load{text-align:center;color:var(--muted);padding:26px 0;font-size:14px}
 .warn-note{background:#FFF4E4;border:1px solid var(--safety);border-radius:10px;padding:9px 12px;font-size:12.5px;color:#7A4A08;margin-bottom:10px}
+.new-material-toggle{background:#F0F7F4;border:1.5px solid #8CB9AA;border-radius:12px;padding:11px 12px;margin:10px 0;display:flex;gap:9px;align-items:flex-start;cursor:pointer}
+.new-material-toggle input{width:20px;height:20px;margin-top:1px;accent-color:var(--safety);flex-shrink:0}
+.new-material-toggle .lbl{font-size:13px;font-weight:800;color:var(--deep-2)}
+.new-material-toggle .sub{font-size:11.5px;color:var(--muted);margin-top:2px}
+.new-material-panel{display:none;background:#F8FBF9;border:1.5px solid #8CB9AA;border-radius:12px;margin:0 0 10px;overflow:hidden}
+.new-material-panel.show{display:block}
+.new-material-head{background:#DDEFE8;color:var(--deep-2);font-size:13px;font-weight:800;padding:9px 12px}
+.new-material-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:11px 12px}
+.new-material-grid .full{grid-column:1/-1}
+.new-material-grid label{display:block;font-size:12px;font-weight:800;margin-bottom:5px;color:var(--deep-2)}
+.new-material-grid input{width:100%;border:1.5px solid var(--line);border-radius:9px;padding:10px 11px;font-family:inherit;font-size:14px;background:var(--white)}
+.new-material-grid input:focus{outline:none;border-color:var(--safety)}
+.new-material-preview{grid-column:1/-1;background:#FFF7EB;border:1px solid #F1C98F;border-radius:9px;padding:8px 10px;font-size:12px;color:#7A4A08}
+.new-material-preview b{color:var(--deep-2)}
+@media(max-width:420px){.new-material-grid{grid-template-columns:1fr}.new-material-grid .full{grid-column:1}}
 
 /* Hồ sơ xe */
 .sec-t{font-weight:800;font-size:14px;color:var(--deep-2);margin:14px 0 8px}
@@ -397,7 +412,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.22-RC2.4.14-XUAT-OTHER-HF1";
+const APP_VERSION = "2026.07.22-RC2.4.15-NHAP-NEW-MATERIAL-HF1";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -1290,7 +1305,8 @@ function renderSlipRows(){
     ? "<b>Không dùng vật tư</b>"
     : "<b>"+list.length+"</b> mã vật tư";
   const allowNoMaterialRepair = state.tab === "suachua" && !isAdjustmentOn();
-  $("btnSend").disabled = list.length === 0 && !allowNoMaterialRepair;
+  const allowNhapNewMaterial = state.tab === "nhap" && $("nhNewChk") && $("nhNewChk").checked;
+  $("btnSend").disabled = list.length === 0 && !allowNoMaterialRepair && !allowNhapNewMaterial;
   if(!list.length){ rows.innerHTML = '<div class="slip-empty">Chưa có vật tư nào. Tìm và bấm chọn ở trên.</div>'; if(state.tab==="xuat")renderXuatAllocation(); return; }
   rows.innerHTML = "";
   list.forEach(r=>{
@@ -1870,37 +1886,149 @@ function renderDash(){
   bindNotificationButtons(mainRoot());
 }
 
+function suggestNextMaterialCode(){
+  const rows = state.data && Array.isArray(state.data.stock) ? state.data.stock : [];
+  let max = 0;
+  rows.forEach(r=>{
+    const m = String(r.ma||"").toUpperCase().match(/^VTPL(\d{4,6})$/);
+    if(m) max = Math.max(max, Number(m[1])||0);
+  });
+  return "VTPL"+String(max+1).padStart(4,"0");
+}
+function nhapMaterialGroupList(){
+  const rows = state.data && Array.isArray(state.data.stock) ? state.data.stock : [];
+  const seen = new Set(["CHƯA PHÂN NHÓM"]);
+  rows.forEach(r=>{ const x=String(r.nhom||"").trim(); if(x) seen.add(x); });
+  return [...seen].sort((a,b)=>a.localeCompare(b,"vi"));
+}
+function collectNhapNewMaterial(showAlert){
+  const on = $("nhNewChk") && $("nhNewChk").checked;
+  if(!on) return null;
+  const ma = String($("nhNewMa").value||"").trim().toUpperCase();
+  const ten = String($("nhNewTen").value||"").trim().replace(/\s+/g," ");
+  const dvt = String($("nhNewDvt").value||"").trim().replace(/\s+/g," ");
+  const nhom = String($("nhNewNhom").value||"").trim().replace(/\s+/g," ") || "CHƯA PHÂN NHÓM";
+  const macu = String($("nhNewMaCu").value||"").trim().replace(/\s+/g," ");
+  const qty = parseInt($("nhNewQty").value,10);
+  const min = parseInt($("nhNewMin").value||"0",10);
+  function fail(msg,id){
+    if(showAlert){ alert(msg); const el=$(id); if(el) el.focus(); }
+    return null;
+  }
+  if(!/^VTPL\d{4,6}$/.test(ma)) return fail("Mã vật tư mới phải theo định dạng VTPL + 4 đến 6 chữ số, ví dụ VTPL4577.","nhNewMa");
+  if(ten.length<3) return fail("Ghi tên vật tư mới, tối thiểu 3 ký tự.","nhNewTen");
+  if(!dvt) return fail("Ghi đơn vị tính của vật tư mới.","nhNewDvt");
+  if(!Number.isInteger(qty)||qty<=0||qty>999999) return fail("Số lượng nhập của vật tư mới phải là số nguyên dương.","nhNewQty");
+  if(!Number.isInteger(min)||min<0||min>999999) return fail("Ngưỡng min phải là số nguyên từ 0 đến 999999.","nhNewMin");
+  const existingByCode=(state.data.stock||[]).find(r=>String(r.ma||"").toUpperCase()===ma);
+  if(existingByCode){
+    return fail("Mã "+ma+" đã có trong danh mục. Bỏ tick Vật tư mới và tìm mã này ở ô tìm kiếm.","nhNewMa");
+  }
+  const identity=stripAccent(ten)+"||"+stripAccent(dvt);
+  const duplicate=(state.data.stock||[]).find(r=>(stripAccent(r.ten)+"||"+stripAccent(r.dvt))===identity);
+  if(duplicate){
+    return fail("Vật tư cùng tên và đơn vị tính đã có mã "+duplicate.ma+". Bỏ tick Vật tư mới và chọn mã hiện có.","nhNewTen");
+  }
+  return {ma,ten,dvt,nhom,macu,qty,min};
+}
+function updateNhapNewMaterialPreview(){
+  const panel=$("nhNewPanel"), on=$("nhNewChk")&&$("nhNewChk").checked;
+  if(panel) panel.classList.toggle("show",!!on);
+  const preview=$("nhNewPreview");
+  if(preview&&on){
+    const ma=String($("nhNewMa").value||"").trim().toUpperCase()||"—";
+    const ten=String($("nhNewTen").value||"").trim()||"Chưa nhập tên";
+    const dvt=String($("nhNewDvt").value||"").trim()||"—";
+    const qty=String($("nhNewQty").value||"").trim()||"—";
+    preview.innerHTML='<b>'+esc(ma)+'</b> · '+esc(ten)+' · Nhập <b>'+esc(qty)+' '+esc(dvt)+'</b><br><span>Sau khi xác nhận, hệ thống mới thêm dòng vào DANH_MUC_VT và ghi phiếu nhập.</span>';
+  }
+  renderSlipRows();
+}
+
 /* ==================== NHẬP KHO (PIN_VAN) ==================== */
 function renderNhap(){
+  const groupOptions = nhapMaterialGroupList().map(x=>'<option value="'+esc(x)+'"></option>').join("");
   $("main").innerHTML =
     slipSearchHTML("nh")
    + slipBoxHTML("PHIẾU NHẬP KHO")
+   +'<label class="new-material-toggle" for="nhNewChk">'
+   +'<input type="checkbox" id="nhNewChk"><div><div class="lbl">Vật tư mới — chưa có trong DANH_MUC_VT</div>'
+   +'<div class="sub">Tick khi hàng vừa về nhưng chưa có mã trong danh mục. Hệ thống sẽ thêm danh mục và ghi nhập trong cùng giao dịch.</div></div></label>'
+   +'<div class="new-material-panel" id="nhNewPanel"><div class="new-material-head">THÔNG TIN VẬT TƯ MỚI</div>'
+   +'<div class="new-material-grid">'
+   +'<div><label>Mã vật tư *</label><input type="text" id="nhNewMa" maxlength="10" value="'+esc(suggestNextMaterialCode())+'" placeholder="VTPL4577"></div>'
+   +'<div><label>Số lượng nhập *</label><input type="number" id="nhNewQty" min="1" max="999999" step="1" value="1"></div>'
+   +'<div class="full"><label>Tên vật tư *</label><input type="text" id="nhNewTen" maxlength="200" placeholder="Ghi đủ tên, quy cách, kích thước nếu có"></div>'
+   +'<div><label>Đơn vị tính *</label><input type="text" id="nhNewDvt" list="nhDvtList" maxlength="40" placeholder="Cái, Bộ, Kg…"><datalist id="nhDvtList"><option>Cái</option><option>Bộ</option><option>Bình</option><option>Chai</option><option>Kg</option><option>Lit</option><option>Mét</option><option>Cuộn</option><option>Tấm</option><option>Cây</option><option>Hộp</option></datalist></div>'
+   +'<div><label>Nhóm vật tư</label><input type="text" id="nhNewNhom" list="nhGroupList" maxlength="80" value="CHƯA PHÂN NHÓM"><datalist id="nhGroupList">'+groupOptions+'</datalist></div>'
+   +'<div><label>Mã cũ kế toán</label><input type="text" id="nhNewMaCu" maxlength="50" placeholder="Không có thì để trống"></div>'
+   +'<div><label>Ngưỡng min</label><input type="number" id="nhNewMin" min="0" max="999999" step="1" value="0"></div>'
+   +'<div class="new-material-preview" id="nhNewPreview"></div>'
+   +'</div></div>'
    +'<div class="frow"><label>Người gửi</label><input type="text" id="nhNguoi" value="Vân"></div>'
    +'<div class="frow"><label>Ngày</label><input type="date" id="nhNgay" required value="'+todayISO()+'"></div>'
-   +'<div class="frow"><label>Ghi chú</label><input type="text" id="nhNote" placeholder="(không bắt buộc)"></div>'
+   +'<div class="frow"><label>Ghi chú</label><input type="text" id="nhNote" placeholder="Số hóa đơn/phiếu giao hàng hoặc ghi chú khác"></div>'
    + adjustRowHTML()
    +'</div>';
   bindSlipSearch("nh"); bindAdjust();
+
+  const baseAdjustHandler = $("adjChk").onchange;
+  $("adjChk").onchange = ()=>{
+    baseAdjustHandler();
+    if($("adjChk").checked && $("nhNewChk").checked){
+      $("nhNewChk").checked=false;
+      updateNhapNewMaterialPreview();
+      alert("Phiếu điều chỉnh không được tạo vật tư mới. Vật tư mới phải nhập bằng phiếu thường.");
+    }
+  };
+  $("nhNewChk").onchange = ()=>{
+    if($("nhNewChk").checked && $("adjChk").checked){
+      $("nhNewChk").checked=false;
+      alert("Bỏ Phiếu điều chỉnh trước khi thêm vật tư mới.");
+      return;
+    }
+    updateNhapNewMaterialPreview();
+    if($("nhNewChk").checked) setTimeout(()=>$("nhNewTen").focus(),0);
+  };
+  ["nhNewMa","nhNewQty","nhNewTen","nhNewDvt","nhNewNhom","nhNewMaCu","nhNewMin"].forEach(id=>{
+    $(id).addEventListener("input",updateNhapNewMaterialPreview);
+  });
+  updateNhapNewMaterialPreview();
+
   $("bar").classList.add("show");
   const btn = $("btnSend");
-  btn.textContent = "Gửi phiếu"; btn.disabled = true;
+  btn.textContent = "Gửi phiếu";
   renderSlipRows();
   btn.onclick = ()=>{
     const list = Object.values(state.slip);
-    if(!list.length) return;
+    const newMaterial = collectNhapNewMaterial(true);
+    if(!list.length && !newMaterial) return;
     const isAdjustment = $("adjChk").checked;
+    if(newMaterial && isAdjustment){ alert("Phiếu điều chỉnh không được tạo vật tư mới."); return; }
     const refTxnId = requireAdjustmentRef(isAdjustment); if(refTxnId===null) return;
     if(!validateSlipSign(list, isAdjustment)) return;
     if(!$("nhNguoi").value.trim()){ alert("Ghi tên người gửi."); return; }
+    if(newMaterial && !$("nhNote").value.trim()){ alert("Vật tư mới bắt buộc ghi số hóa đơn, phiếu giao hàng hoặc nguồn nhập trong Ghi chú."); $("nhNote").focus(); return; }
     if(isAdjustment && !$("nhNote").value.trim()){ alert("Phiếu điều chỉnh bắt buộc ghi chú lý do."); return; }
     const ngay = requireDateVN("nhNgay"); if(!ngay) return;
+    const summaryRows = list.map(r=>"• "+esc(r.ten)+" — <b>"+r.qty+" "+esc(r.dvt)+"</b>");
+    if(newMaterial) summaryRows.push('• <b>[VẬT TƯ MỚI]</b> '+esc(newMaterial.ma)+' · '+esc(newMaterial.ten)+' — <b>'+newMaterial.qty+' '+esc(newMaterial.dvt)+'</b>');
     openConfirm({
       title: "Xác nhận PHIẾU "+(isAdjustment?"ĐIỀU CHỈNH ":"")+"NHẬP KHO",
-      summary: list.map(r=>"• "+esc(r.ten)+" — <b>"+r.qty+" "+esc(r.dvt)+"</b>").join("<br>"),
+      summary: summaryRows.join("<br>"),
       needPin: "VAN",
-      payload: { type:"NHAP", nguoi:$("nhNguoi").value.trim(), note:$("nhNote").value.trim(),
-                 date:ngay, isAdjustment:isAdjustment, refTxnId:refTxnId, items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})) },
-      doneMsg: j=> "Đã ghi phiếu "+(j.phieuId||j.txnId||"")+" với "+list.length+" mã nhập.",
+      payload: {
+        type:"NHAP", nguoi:$("nhNguoi").value.trim(), note:$("nhNote").value.trim(),
+        date:ngay, isAdjustment:isAdjustment, refTxnId:refTxnId,
+        items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})),
+        newMaterial:newMaterial
+      },
+      doneMsg: j=> {
+        const count=list.length+(newMaterial?1:0);
+        if(j.newMaterialAdded) return "Đã thêm "+(j.newMaterialCode||newMaterial.ma)+" vào DANH_MUC_VT và ghi phiếu "+(j.phieuId||j.txnId||"")+" với "+count+" mã nhập.";
+        if(j.newMaterialReused) return "Mã "+(j.newMaterialCode||newMaterial.ma)+" đã tồn tại; hệ thống không tạo dòng danh mục mới và đã ghi phiếu nhập.";
+        return "Đã ghi phiếu "+(j.phieuId||j.txnId||"")+" với "+count+" mã nhập.";
+      },
       after: ()=>{ loadData(); }
     });
   };
