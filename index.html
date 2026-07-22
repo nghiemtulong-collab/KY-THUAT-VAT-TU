@@ -412,7 +412,7 @@ body.dash header .hd-inner{max-width:760px}
 <script>
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
-const APP_VERSION = "2026.07.22-RC2.4.15-NHAP-NEW-MATERIAL-HF1";
+const APP_VERSION = "2026.07.22-RC2.4.16-DASH-VEHICLE-ONLY-HF1";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -889,7 +889,12 @@ async function pollDashboardEvents(){
     if(j.versionMismatch||j.version!==APP_VERSION){state.versionOk=false;stopDashRefresh();window.__ktvtActivePane=null;mainRoot().innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Đã dừng tự cập nhật và khóa ghi dữ liệu. Ctrl+F5 sau khi deploy hoàn tất.</div>';$('hdSub').textContent="Lệch phiên bản — đã khóa ghi dữ liệu";return;}
     state.connectionFailures=0;state.pollDelayMs=5000;setConnectionStatus("online");
     const events=Array.isArray(j.events)?j.events:[];state.lastDashPollSeq=Math.max(sinceSeq,Number(j.latestSeq||0));
-    events.filter(e=>e&&["BAO_HONG","SUA_CHUA","BAO_DUONG","CHECKLIST_DAU_CA"].includes(String(e.type||"").toUpperCase())).sort((a,b)=>Number(a.eventSeq||0)-Number(b.eventSeq||0)).forEach(queueDashLiveAlert);
+    events.filter(e=>{
+      if(!e)return false;
+      const t=String(e.type||"").toUpperCase();
+      if(!["BAO_HONG","SUA_CHUA","BAO_DUONG","CHECKLIST_DAU_CA"].includes(t))return false;
+      return t!=="CHECKLIST_DAU_CA"||String(e.result||"").toUpperCase()==="KHONG_DAT";
+    }).sort((a,b)=>Number(a.eventSeq||0)-Number(b.eventSeq||0)).forEach(queueDashLiveAlert);
     if(j.changed||Number(j.latestSeq||0)!==sinceSeq)await refreshViewSilently();
   }catch(err){state.connectionFailures++;state.pollDelayMs=Math.min(60000,5000*Math.pow(2,Math.min(3,state.connectionFailures)));setConnectionStatus("offline",(err&&err.name==="AbortError"?"Heartbeat quá 10 giây":"Mất kết nối")+" — thử lại sau "+Math.round(state.pollDelayMs/1000)+" giây");}
   finally{state.polling=false;scheduleDashPoll_();}
@@ -964,7 +969,7 @@ function initUI(){
   const d = state.data;
   if(MODE === "dash"){
     document.body.classList.add("dash");
-    $("hdSub").innerHTML = "Bảng theo dõi tổng — nhận phiếu mới mỗi 5 giây" + navHTML("dash");
+    $("hdSub").innerHTML = "Bảng điều hành phương tiện — đồng bộ thay đổi mỗi 5 giây" + navHTML("dash");
     renderDash();
     state.lastDashAlertSeq=Number(d.latestSeq||0);
     state.lastDashPollSeq=Number(d.latestSeq||0);
@@ -1771,7 +1776,7 @@ function renderDash(){
   state.lastDashRenderSeq=Number(state.data&&state.data.latestSeq||0);
   state.lastDashRenderDay=todayISO();
   state.lastDashRenderAt=Date.now();
-  const d=state.data,todayVN=isoToVN(todayISO());
+  const d=state.data,todayVN=isoToVN(todayISO()),hist=d.history||{};
   const latestSeq=Math.max(0,Number(d.latestSeq||0));
   const unread=unreadNotifications();
   document.title=(unread.length?"("+unread.length+") ":"")+"Kỹ thuật vật tư — ICD Phúc Long";
@@ -1779,34 +1784,31 @@ function renderDash(){
   const open=d.openBH.map(o=>({...o,age:ageDays(o.ngay),dead:/chết/i.test(o.tinhTrang||"")})).sort((a,b)=>b.age-a.age);
   const pendingQC=(d.pendingQC||[]).slice().sort((a,b)=>sortKey(b)>sortKey(a)?1:-1);
   const deadXe={},warnXe={},oldestXe={};open.forEach(o=>{if(o.dead)deadXe[o.maXe]=true;else warnXe[o.maXe]=true;if(oldestXe[o.maXe]==null||o.age>oldestXe[o.maXe])oldestXe[o.maXe]=o.age;});
-  const lich=d.hangmuc.filter(h=>h.loai!=="GIO"&&!h.noBase),over=lich.filter(h=>h.overdue).sort((a,b)=>a.daysLeft-b.daysLeft),soon=lich.filter(h=>!h.overdue&&h.daysLeft<=7).sort((a,b)=>a.daysLeft-b.daysLeft),gio=d.hangmuc.filter(h=>h.loai==="GIO"),low=d.stock.filter(r=>r.min>0&&r.ton<=r.min);
+  const lich=d.hangmuc.filter(h=>h.loai!=="GIO"&&!h.noBase),over=lich.filter(h=>h.overdue).sort((a,b)=>a.daysLeft-b.daysLeft),soon=lich.filter(h=>!h.overdue&&h.daysLeft<=7).sort((a,b)=>a.daysLeft-b.daysLeft),gio=d.hangmuc.filter(h=>h.loai==="GIO");
   const kdAll=(d.inspection||[]),kdOver=kdAll.filter(r=>r.status==="OVERDUE").sort((a,b)=>a.daysLeft-b.daysLeft),kdSoon=kdAll.filter(r=>r.status==="SOON").sort((a,b)=>a.daysLeft-b.daysLeft),kdMissing=kdAll.filter(r=>r.status==="NO_DATA"),kdValid=kdAll.filter(r=>r.status==="VALID");
   const checklistVehicles=d.xe.filter(x=>!!checklistGroupForVehicle(x));
   const checklistRows=(d.checklistToday||[]);
   const historyLoaded=d.historyLoaded===true;
-  const vavoRecent=historyLoaded?(d.history.VA_VO||[]).slice(0,20):[];
+  const vavoRecent=historyLoaded?(hist.VA_VO||[]).slice(0,20):[];
   let dashShift=sessionStorage.getItem('ktvt_dash_shift')||'CA_1';if(!['CA_1','CA_2','CA_3'].includes(dashShift))dashShift='CA_1';
 
   const acts=[];
-  d.history.BAO_HONG.forEach(r=>acts.push({t:"bh",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag bh">BÁO HỎNG</span>',top:esc(r.maXe)+" · "+esc(r.tinhTrang),sub:esc(r.nguoi)+" · "+esc(r.moTa)+" · "+esc(r.txnId||"")}));
-  d.history.XUAT.forEach(r=>acts.push({t:"x",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag d" style="background:#FDE8E6;color:var(--danger)">XUẤT</span>',top:esc(r.vt)+" — "+r.sl+" "+esc(r.dvt),sub:[r.maXe?"xe "+esc(r.maXe):"",r.nguoiNhan?"nhận "+esc(r.nguoiNhan):"",esc(r.nguoi),esc(r.txnId||"")].filter(Boolean).join(" · "),neg:r.sl<0}));
-  d.history.SUA_CHUA.forEach(r=>acts.push({t:"sc",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag sc">SỬA CHỮA</span>',top:esc(r.maXe)+" · "+repairStatusText(r.status),sub:esc(r.nguoi)+" · "+esc(r.ghichu)+" · "+esc(r.repairId||r.txnId||""),neg:r.status==="QC_REJECTED"}));
-  (d.history.QC||[]).forEach(r=>acts.push({t:"qc",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag sc">QC</span>',top:esc(r.maXe)+" · "+(r.ketQua==="APPROVE"?"ĐẠT":"KHÔNG ĐẠT"),sub:esc(r.nguoiQC)+" · "+esc(r.ghiChu)+" · "+esc(r.qcId||""),neg:r.ketQua!=="APPROVE"}));
-  d.history.NHAP.forEach(r=>acts.push({t:"n",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag n">NHẬP</span>',top:esc(r.vt)+" — "+r.sl+" "+esc(r.dvt),sub:esc(r.nguoi)+" · "+esc(r.txnId||"")+(r.ghichu?" · "+esc(r.ghichu):""),neg:r.sl<0}));
-  d.history.BAO_DUONG.forEach(r=>acts.push({t:"bd",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag bd">BẢO DƯỠNG</span>',top:esc(r.maXe)+" · "+esc(r.hangMuc),sub:(r.soGio!=null?r.soGio+"h · ":"")+esc(r.nguoi)+" · "+esc(r.txnId||"")}));
-  d.history.DE_XUAT.forEach(r=>acts.push({t:"d",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag d">ĐỀ XUẤT</span>',top:esc(r.vt)+" — "+r.sl+" "+esc(r.dvt),sub:esc(r.nguoi)+" · "+esc(r.txnId||"")}));
-  (d.history.KIEM_DINH||[]).forEach(r=>acts.push({t:"kd",ts:r.ts,ngay:r.inspectionDate,tag:'<span class="hist-tag d">KIỂM ĐỊNH</span>',top:esc(r.maXe)+" · hạn "+esc(r.nextInspectionDate||""),sub:esc(r.updatedBy||"")+" · "+esc(r.inspectionOrg||"")+" · "+esc(r.txnId||"")}));
-  (d.history.CHECKLIST||[]).forEach(r=>acts.push({t:"cl",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag '+(r.result==="KHONG_DAT"?'bh':'sc')+'">CHECKLIST</span>',top:esc(r.maXe)+" · "+esc(shiftLabel(r.shift))+" · "+(r.result==="KHONG_DAT"?"KHÔNG ĐẠT":"ĐẠT"),sub:esc(r.nguoi)+(r.failedLabels&&r.failedLabels.length?' · '+esc(r.failedLabels.join(', ')):'')+' · '+esc(r.txnId||''),neg:r.result==="KHONG_DAT"}));
-  (d.history.VA_VO||[]).forEach(r=>acts.push({t:"vv",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag d">VÁ VỎ</span>',top:esc(r.maXe)+" · "+esc(r.noiDung),sub:esc(r.taiXe)+(r.ghiChu?' · '+esc(r.ghiChu):'')+' · '+esc(r.txnId||'')}));
+  (hist.BAO_HONG||[]).forEach(r=>acts.push({t:"bh",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag bh">BÁO HỎNG</span>',top:esc(r.maXe)+" · "+esc(r.tinhTrang),sub:esc(r.nguoi)+" · "+esc(r.moTa)+" · "+esc(r.txnId||"")}));
+  (hist.SUA_CHUA||[]).forEach(r=>acts.push({t:"sc",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag sc">SỬA CHỮA</span>',top:esc(r.maXe)+" · "+repairStatusText(r.status),sub:esc(r.nguoi)+" · "+esc(r.ghichu)+" · "+esc(r.repairId||r.txnId||""),neg:r.status==="QC_REJECTED"}));
+  (hist.QC||[]).forEach(r=>acts.push({t:"qc",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag sc">QC</span>',top:esc(r.maXe)+" · "+(r.ketQua==="APPROVE"?"ĐẠT":"KHÔNG ĐẠT"),sub:esc(r.nguoiQC)+" · "+esc(r.ghiChu)+" · "+esc(r.qcId||""),neg:r.ketQua!=="APPROVE"}));
+  (hist.BAO_DUONG||[]).forEach(r=>acts.push({t:"bd",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag bd">BẢO DƯỠNG</span>',top:esc(r.maXe)+" · "+esc(r.hangMuc),sub:(r.soGio!=null?r.soGio+"h · ":"")+esc(r.nguoi)+" · "+esc(r.txnId||"")}));
+  (hist.KIEM_DINH||[]).forEach(r=>acts.push({t:"kd",ts:r.ts,ngay:r.inspectionDate,tag:'<span class="hist-tag d">KIỂM ĐỊNH</span>',top:esc(r.maXe)+" · hạn "+esc(r.nextInspectionDate||""),sub:esc(r.updatedBy||"")+" · "+esc(r.inspectionOrg||"")+" · "+esc(r.txnId||"")}));
+  (hist.CHECKLIST||[]).forEach(r=>acts.push({t:"cl",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag '+(r.result==="KHONG_DAT"?'bh':'sc')+'">CHECKLIST</span>',top:esc(r.maXe)+" · "+esc(shiftLabel(r.shift))+" · "+(r.result==="KHONG_DAT"?"KHÔNG ĐẠT":"ĐẠT"),sub:esc(r.nguoi)+(r.failedLabels&&r.failedLabels.length?' · '+esc(r.failedLabels.join(', ')):'')+' · '+esc(r.txnId||''),neg:r.result==="KHONG_DAT"}));
+  (hist.VA_VO||[]).forEach(r=>acts.push({t:"vv",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag d">VÁ VỎ</span>',top:esc(r.maXe)+" · "+esc(r.noiDung),sub:esc(r.taiXe)+(r.ghiChu?' · '+esc(r.ghiChu):'')+' · '+esc(r.txnId||'')}));
   acts.sort((a,b)=>sortKey(b)>sortKey(a)?1:-1);state.dashActs=acts;const todayCount=acts.filter(a=>a.ngay===todayVN).length;
 
   const base=location.origin+location.pathname;
   let html='<div class="counts">'
    +'<div class="count-card'+(open.length?' bad':'')+'"><div class="num">'+open.length+'</div><div class="lb">SỰ CỐ MỞ</div></div>'
    +'<div class="count-card'+(pendingQC.length?' bad':'')+'"><div class="num">'+pendingQC.length+'</div><div class="lb">CHỜ QC</div></div>'
-   +'<div class="count-card'+(over.length?' bad':'')+'"><div class="num">'+over.length+'</div><div class="lb">QUÁ HẠN BD</div></div>'
-   +'<div class="count-card'+(low.length?' bad':'')+'"><div class="num">'+low.length+'</div><div class="lb">DƯỚI MIN</div></div></div>'
-   +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px"><div class="dash-note" id="dashUpdated">Cập nhật '+esc(d.updated)+(historyLoaded?'':' · đang tải lịch sử nền…')+'</div><button class="seen-btn" id="btnOpenNotifications">Phiếu mới '+(unread.length?'<span class="notif-count">'+unread.length+'</span>':'0')+'</button></div>';
+   +'<div class="count-card'+(over.length?' bad':'')+'"><div class="num">'+over.length+'</div><div class="lb">QUÁ HẠN BD</div></div></div>'
+   +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px"><div class="dash-note" id="dashUpdated">Cập nhật '+esc(d.updated)+(historyLoaded?'':' · đang tải lịch sử nền…')+'</div><button class="seen-btn" id="btnOpenNotifications">Phiếu mới '+(unread.length?'<span class="notif-count">'+unread.length+'</span>':'0')+'</button></div>'
+   +'<div class="dash-note" style="margin-top:6px">Dashboard này chỉ theo dõi phương tiện. Tồn, nhập, xuất và đề xuất vật tư xem tại giao diện Kho.</div>';
 
   if(unread.length){
     html+='<div class="notif-box"><div class="notif-head"><b>🔔 '+unread.length+' PHIẾU MỚI</b><button class="notif-link" id="btnNotifAll">Xem tất cả</button></div>'
@@ -1861,10 +1863,8 @@ function renderDash(){
 
   html+='<div class="sec-t">MỐC GIỜ MÁY</div><table class="gio-table"><tr><th>Xe</th><th>Hạng mục</th><th>Mốc gần nhất</th><th>Kỳ tới</th></tr>';
   gio.forEach(h=>{html+='<tr><td><b>'+esc(h.maXe)+'</b></td><td>'+esc(h.hangMuc)+'</td>'+(h.noBase?'<td colspan="2"><span class="tag nobase">CHƯA CÓ MỐC</span></td>':'<td>'+h.lastGio+'h'+(h.lastNgay?' ('+esc(h.lastNgay)+')':'')+'</td><td><b>'+h.nextGio+'h</b></td>')+'</tr>';});html+='</table>';
-  if(low.length){html+='<div class="sec-t">VẬT TƯ DƯỚI NGƯỠNG ('+low.length+')</div>';low.forEach(r=>{html+='<div class="stock-row low"><div><div class="nm">'+esc(r.ten)+'</div><div class="cd">'+esc(r.ma)+' · Min '+r.min+'</div></div><div class="ton">'+r.ton+' <small>'+esc(r.dvt)+'</small></div></div>';});}
-
   if(historyLoaded){
-  html+='<div class="sec-t">NHẬT KÝ HOẠT ĐỘNG — hôm nay '+todayCount+' phiếu</div><div class="chips" id="daChips"><button data-t="all">Tất cả</button><button data-t="bh">Báo hỏng</button><button data-t="x">Xuất</button><button data-t="sc">Sửa chữa</button><button data-t="qc">QC</button><button data-t="n">Nhập</button><button data-t="bd">Bảo dưỡng</button><button data-t="cl">Checklist</button><button data-t="vv">Vá vỏ</button><button data-t="kd">Kiểm định</button><button data-t="d">Đề xuất</button></div>'
+  html+='<div class="sec-t">NHẬT KÝ PHƯƠNG TIỆN — hôm nay '+todayCount+' hoạt động</div><div class="chips" id="daChips"><button data-t="all">Tất cả</button><button data-t="bh">Báo hỏng</button><button data-t="sc">Sửa chữa</button><button data-t="qc">QC</button><button data-t="bd">Bảo dưỡng</button><button data-t="cl">Checklist</button><button data-t="vv">Vá vỏ</button><button data-t="kd">Kiểm định</button></div>'
       +'<div class="search-box" style="display:flex;gap:8px;padding-top:0"><input type="date" id="daDate" style="flex:1;border:2px solid var(--line);border-radius:12px;padding:10px 12px;font-family:inherit;font-size:15px;background:var(--white)"><button id="daDateAll" class="seen-btn">Mọi ngày</button></div><div class="hint">Không lọc ngày: 50 dòng gần nhất.</div><div id="daList"></div>';
     $("main").innerHTML=html;
     document.querySelectorAll('[data-dshift]').forEach(btn=>btn.onclick=()=>{sessionStorage.setItem('ktvt_dash_shift',btn.dataset.dshift);renderDash();});
@@ -1873,7 +1873,7 @@ function renderDash(){
     function renderDaList(){let list=state.dashActs.filter(a=>state.daType==="all"||a.t===state.daType);const df=$("daDate").value;if(df)list=list.filter(a=>a.ngay===isoToVN(df));else list=list.slice(0,50);const box=$("daList");box.innerHTML="";if(!list.length){box.innerHTML='<div class="empty-note">Không có phiếu khớp bộ lọc.</div>';return;}list.forEach(a=>box.insertAdjacentHTML("beforeend",'<div class="hist-row'+(a.neg?' neg':'')+'"><div class="top"><span>'+a.tag+a.top+'</span><b>'+esc(a.ngay)+'</b></div><div class="sub">Gửi '+esc(a.ts)+' · '+a.sub+'</div></div>'));}
     renderDaList();
   }else{
-    html+='<div class="sec-t">NHẬT KÝ HOẠT ĐỘNG</div><div class="empty-note">Đang tải nhật ký hoạt động ở nền… Dashboard phía trên vẫn sử dụng bình thường.</div>';
+    html+='<div class="sec-t">NHẬT KÝ PHƯƠNG TIỆN</div><div class="empty-note">Đang tải nhật ký phương tiện ở nền… Dashboard phía trên vẫn sử dụng bình thường.</div>';
     $("main").innerHTML=html;
     document.querySelectorAll('[data-dshift]').forEach(btn=>btn.onclick=()=>{sessionStorage.setItem('ktvt_dash_shift',btn.dataset.dshift);renderDash();});
     $("btnOpenNotifications").onclick=openNotificationInbox;
