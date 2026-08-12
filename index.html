@@ -445,6 +445,7 @@ body.dash header .hd-inner{max-width:760px}
 // ====== CẤU HÌNH — DÁN URL APPS SCRIPT /exec VÀO ĐÂY ======
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
 const APP_VERSION = "2026.07.24-RC2.4.17-STOCK-ADJUSTMENT-VIEW-HF2";
+const CONNECTIVITY_HOTFIX = "2026.08.12-QR-CONNECTIVITY-HF2-PIN-RETAINED";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -677,7 +678,20 @@ async function rawPost(body, timeoutMs=30000){
   const timer=setTimeout(()=>{timedOut=true;ctl.abort();},timeoutMs);
   try{
     const res=await fetch(SCRIPT_URL,{method:"POST",body:JSON.stringify(body),cache:"no-store",signal:ctl.signal});
-    let out;try{out=await res.json();}catch(_){throw new Error("Phản hồi backend không phải JSON hợp lệ.");}
+    const raw=await res.text();
+    let out;
+    try{out=JSON.parse(raw);}
+    catch(_){
+      const ct=String(res.headers&&res.headers.get?res.headers.get("content-type")||"":"").toLowerCase();
+      const looksHtml=ct.includes("text/html")||/^\s*</.test(raw||"");
+      const e=new Error(looksHtml
+        ? "Backend trả HTML thay vì JSON. Web App deployment hoặc quyền truy cập endpoint đang lỗi."
+        : "Phản hồi backend không phải JSON hợp lệ.");
+      e.name="BackendResponseError";e.httpStatus=res.status;e.contentType=ct;
+      try{e.bodyPrefix=String(raw||"").slice(0,160);}catch(__){}
+      throw e;
+    }
+    if(!res.ok){const e=new Error(out.message||("Backend HTTP "+res.status));e.name="BackendResponseError";e.httpStatus=res.status;throw e;}
     out._clientTotalMs=Math.round((performance.now()-started)*10)/10;
     state.lastRequestMs=out._clientTotalMs;state.lastServerMs=Number(out.perf&&out.perf.serverMs||0);
     return out;
@@ -2175,7 +2189,10 @@ async function sendPending(){
     state.sending=false;clearPin();setConnectionStatus("offline");$("ovSending").classList.remove("show");
     // Không biết backend đã ghi hay chưa. Giữ nguyên requestId để retry an toàn.
     $("doneIcon").textContent="❓";$("doneTitle").textContent="Chưa xác định kết quả";
-    $("doneMsg").textContent=(err&&err.name==="AbortError"?"Backend phản hồi quá 45 giây.":"Mạng bị gián đoạn.")+" Không lập phiếu mới. Nhập lại PIN và thử lại bằng đúng Request ID; backend sẽ không ghi trùng.";
+    const cause=err&&err.name==="AbortError"
+      ? "Backend phản hồi quá 45 giây."
+      : (err&&err.name==="BackendResponseError" ? (err.message||"Backend trả phản hồi không hợp lệ.") : "Mạng bị gián đoạn.");
+    $("doneMsg").textContent=cause+" Không lập phiếu mới. Nhập lại PIN và thử lại bằng đúng Request ID; backend sẽ không ghi trùng.";
     $("docLinkWrap").innerHTML="";$("btnDoneOk").textContent="Nhập PIN và thử lại an toàn";
     $("btnDoneOk").onclick=()=>{$("ovDone").classList.remove("show");$("btnConfirm").disabled=false;$("btnConfirm").textContent="Gửi lại an toàn";$("pinErr").textContent="Đang dùng lại Request ID cũ để chống ghi trùng.";$("pinErr").style.display="block";$("ovConfirm").classList.add("show");};
     $("ovDone").classList.add("show");
@@ -2201,7 +2218,10 @@ $("btnAccess").onclick=async()=>{
     if(j.status==="wrong_pin"||j.status==="locked"){showAccessError(j.status==="locked"?"Thiết bị bị khóa tạm thời. Thử lại sau "+Math.ceil((j.retryAfter||60)/60)+" phút.":"Mật khẩu truy cập không đúng.");return;}
     if(j.status!=="ok"||!j.accessToken){showAccessError(j.message||"Không tạo được phiên đăng nhập.");return;}
     saveAccessToken(j.accessToken,state.accessScope);$("ovAccess").classList.remove("show");await loadData();
-  }catch(err){showAccessError(err&&err.message?err.message:"Không kết nối được backend.");}
+  }catch(err){
+    const msg=err&&err.name==="AbortError"?"Backend phản hồi quá lâu. Thử lại sau vài giây.":(err&&err.message?err.message:"Không kết nối được backend.");
+    showAccessError(msg);
+  }
   finally{$("btnAccess").disabled=false;$("btnAccess").textContent="Mở hệ thống";}
 };
 $("accessPin").addEventListener("keydown",e=>{if(e.key==="Enter")$("btnAccess").click();});
