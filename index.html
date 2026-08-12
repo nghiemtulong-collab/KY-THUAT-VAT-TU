@@ -448,6 +448,7 @@ const APP_VERSION = "2026.07.24-RC2.4.17-STOCK-ADJUSTMENT-VIEW-HF2";
 const CONNECTIVITY_HOTFIX = "2026.08.12-QR-CONNECTIVITY-HF2-PIN-RETAINED";
 const VIEW_LOAD_HOTFIX = "2026.08.12-XE-FAST-VIEW-HF3";
 const READ_PATH_HOTFIX = "2026.08.12-READ-PATH-NOWRITE-HF4";
+const DASH_STABILITY_HOTFIX = "2026.08.12-DASH-LOAD-SHED-HF5";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -483,8 +484,8 @@ const state = {
   lastDashRenderSeq:-1, lastDashRenderDay:"", lastDashRenderAt:0,
   renderMetrics:{},
   connection:"idle",lastSuccessAt:0,lastRequestMs:0,lastServerMs:0,connectionFailures:0,
-  pollDelayMs:5000,pollRequestSeq:0,viewRequestSeq:0,connectionTicker:null,
-  dashboardDetailsLoading:false,dashboardDetailsRequestSeq:0,dashboardDetailsLoadedSeq:-1,
+  pollDelayMs:15000,pollRequestSeq:0,viewRequestSeq:0,connectionTicker:null,
+  dashboardDetailsLoading:false,dashboardDetailsRequestSeq:0,dashboardDetailsLoadedSeq:-1,dashboardDetailsError:"",dashboardDetailsWanted:false,
   xeDetailsLoading:false,xeDetailsRequestSeq:0,xeDetailsLoadedSeq:-1,xeDetailsTimer:null
 };
 
@@ -688,7 +689,7 @@ async function rawPost(body, timeoutMs=30000){
       const ct=String(res.headers&&res.headers.get?res.headers.get("content-type")||"":"").toLowerCase();
       const looksHtml=ct.includes("text/html")||/^\s*</.test(raw||"");
       const e=new Error(looksHtml
-        ? "Backend trả HTML thay vì JSON. Web App deployment hoặc quyền truy cập endpoint đang lỗi."
+        ? "Apps Script trả HTML thay vì JSON. Có thể runtime đang quá tải hoặc gateway/deployment lỗi; dữ liệu hiện tại được giữ nguyên."
         : "Phản hồi backend không phải JSON hợp lệ.");
       e.name="BackendResponseError";e.httpStatus=res.status;e.contentType=ct;
       try{e.bodyPrefix=String(raw||"").slice(0,160);}catch(__){}
@@ -858,25 +859,28 @@ function scheduleDashboardDetailsLoad_(delay){
   setTimeout(loadDashboardDetails,Math.max(0,Number(delay)||0));
 }
 async function loadDashboardDetails(){
-  if(MODE!=="dash"||!state.accessToken||state.dashboardDetailsLoading)return;
+  if(MODE!=="dash"||!state.accessToken||state.dashboardDetailsLoading||state.data&&state.data.historyLoaded)return;
   const requestSeq=++state.dashboardDetailsRequestSeq;
-  state.dashboardDetailsLoading=true;
+  state.dashboardDetailsLoading=true;state.dashboardDetailsWanted=true;state.dashboardDetailsError="";
   try{
-    const j=await apiCall({type:"DASH_DETAILS"},30000);
+    const j=await apiCall({type:"DASH_DETAILS"},20000);
     if(requestSeq!==state.dashboardDetailsRequestSeq)return;
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok"||j.versionMismatch||j.version!==APP_VERSION)throw new Error(j.message||"Không tải được chi tiết Dashboard.");
     const currentSeq=Number(state.data&&state.data.latestSeq||0),detailSeq=Number(j.latestSeq||0);
-    if(detailSeq<currentSeq){scheduleDashboardDetailsLoad_(800);return;}
     mergeDashboardDetails_(j);
-    if(state.tab==="dash"||MODE==="dash")renderDash();
+    // HF5: không retry-loop nếu trong lúc scan có event mới. Giữ history vừa nhận và đánh stale;
+    // lần người dùng chủ động tải sau sẽ nhận dữ liệu mới. Retry 800ms cũ có thể tạo request storm.
+    state.data.historyStale=detailSeq<currentSeq;
+    renderDash();
   }catch(err){
+    state.dashboardDetailsError=err&&err.name==="AbortError"?"Nhật ký phản hồi quá 20 giây — chưa tải để tránh làm nặng hệ thống.":(err&&err.message?err.message:"Không tải được nhật ký phương tiện.");
     try{console.warn("[KTVT] DASH_DETAILS",err);}catch(_){}
   }finally{
     state.dashboardDetailsLoading=false;
+    if(MODE==="dash"&&state.data&&!state.data.historyLoaded)renderDash();
   }
 }
-
 function mergeXeDetails_(details){
   if(!state.data||MODE!=="xe")return;
   state.data.history=details.history||state.data.history||{};
@@ -943,8 +947,8 @@ async function loadData(){
     }
     setConnectionStatus("online",j.cacheHit?"Đã đồng bộ từ cache hiển thị":"Đã đồng bộ dữ liệu mới");
     initUI();
-    if(MODE==="dash")scheduleDashboardDetailsLoad_(80);
-    // HF4: không tự quét lịch sử nặng ngay sau đăng nhập. renderHoSo sẽ lazy-load nếu người dùng thực sự ở tab Hồ sơ.
+    // HF5: Dashboard không tự gọi DASH_DETAILS. Snapshot chính mở ngay; lịch sử chỉ tải khi anh Bình bấm yêu cầu.
+    // HF4: hồ sơ XE vẫn lazy-load nếu người dùng thực sự ở tab Hồ sơ.
   }catch(err){
     if(requestSeq!==state.viewRequestSeq)return;
     setConnectionStatus("offline",(err&&err.name==="AbortError"?"Server phản hồi quá lâu":"Mất kết nối")+" — "+(hadData?"giữ dữ liệu cũ":"chưa tải được dữ liệu"));
@@ -974,7 +978,7 @@ async function refreshViewSilently(){
     const oldHistory=state.data&&state.data.historyLoaded?state.data.history:null;
     state.data=j;
     if(oldHistory){state.data.history=oldHistory;state.data.historyLoaded=true;state.data.historyStale=true;}
-    state.versionOk=true;prepareDataCache(state.data);renderDash();scheduleDashboardDetailsLoad_(120);
+    state.versionOk=true;prepareDataCache(state.data);renderDash();
   }catch(err){state.connectionFailures++;setConnectionStatus("offline",(err&&err.name==="AbortError"?"Server phản hồi quá lâu":"Mất kết nối")+" — giữ dữ liệu cũ");}
   finally{state.refreshing=false;}
 }
@@ -984,12 +988,12 @@ async function pollDashboardEvents(){
   state.polling=true;const pollSeq=++state.pollRequestSeq;
   try{
     const sinceSeq=Math.max(0,Number(state.lastDashPollSeq||0));
-    const j=await apiCall({type:"DASH_POLL",sinceSeq:sinceSeq},10000);
+    const j=await apiCall({type:"DASH_POLL",sinceSeq:sinceSeq},8000);
     if(pollSeq!==state.pollRequestSeq)return;
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok")throw new Error(j.message||"Heartbeat lỗi.");
     if(j.versionMismatch||j.version!==APP_VERSION){state.versionOk=false;stopDashRefresh();window.__ktvtActivePane=null;mainRoot().innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Đã dừng tự cập nhật và khóa ghi dữ liệu. Ctrl+F5 sau khi deploy hoàn tất.</div>';$('hdSub').textContent="Lệch phiên bản — đã khóa ghi dữ liệu";return;}
-    state.connectionFailures=0;state.pollDelayMs=5000;setConnectionStatus("online");
+    state.connectionFailures=0;state.pollDelayMs=15000;setConnectionStatus("online");
     const events=Array.isArray(j.events)?j.events:[];state.lastDashPollSeq=Math.max(sinceSeq,Number(j.latestSeq||0));
     events.filter(e=>{
       if(!e)return false;
@@ -998,7 +1002,7 @@ async function pollDashboardEvents(){
       return t!=="CHECKLIST_DAU_CA"||String(e.result||"").toUpperCase()==="KHONG_DAT";
     }).sort((a,b)=>Number(a.eventSeq||0)-Number(b.eventSeq||0)).forEach(queueDashLiveAlert);
     if(j.changed||Number(j.latestSeq||0)!==sinceSeq)await refreshViewSilently();
-  }catch(err){state.connectionFailures++;state.pollDelayMs=Math.min(60000,5000*Math.pow(2,Math.min(3,state.connectionFailures)));setConnectionStatus("offline",(err&&err.name==="AbortError"?"Heartbeat quá 10 giây":"Mất kết nối")+" — thử lại sau "+Math.round(state.pollDelayMs/1000)+" giây");}
+  }catch(err){state.connectionFailures++;state.pollDelayMs=Math.min(60000,15000*Math.pow(2,Math.min(2,state.connectionFailures)));setConnectionStatus("offline",(err&&err.name==="AbortError"?"Heartbeat quá 8 giây":"Mất kết nối")+" — thử lại sau "+Math.round(state.pollDelayMs/1000)+" giây");}
   finally{state.polling=false;scheduleDashPoll_();}
 }
 function scheduleDashPoll_(){
@@ -1057,9 +1061,9 @@ async function markNotificationsSeen(ids, markAll){
     renderDash();
   }catch(err){
     const msg=err&&err.name==="AbortError"
-      ? 'Backend phản hồi quá 45 giây. Trạng thái “Đã xem” chưa xác định; tải lại Dashboard để kiểm tra trước khi bấm lại.'
-      : (err&&err.message?err.message:'Không kết nối được backend.');
-    alert(msg);
+      ? 'Không cập nhật được “Đã xem” vì backend đang bận. Dữ liệu nghiệp vụ không bị ảnh hưởng.'
+      : 'Không cập nhật được “Đã xem”. Giữ nguyên trạng thái hiện tại và thử lại sau.';
+    setConnectionStatus("offline",msg);
   }finally{
     actionButtons.forEach(btn=>btn.disabled=false);
   }
@@ -1922,7 +1926,7 @@ function renderDash(){
    +'<div class="count-card'+(open.length?' bad':'')+'"><div class="num">'+open.length+'</div><div class="lb">SỰ CỐ MỞ</div></div>'
    +'<div class="count-card'+(pendingQC.length?' bad':'')+'"><div class="num">'+pendingQC.length+'</div><div class="lb">CHỜ QC</div></div>'
    +'<div class="count-card'+(over.length?' bad':'')+'"><div class="num">'+over.length+'</div><div class="lb">QUÁ HẠN BD</div></div></div>'
-   +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px"><div class="dash-note" id="dashUpdated">Cập nhật '+esc(d.updated)+(historyLoaded?'':' · đang tải lịch sử nền…')+'</div><button class="seen-btn" id="btnOpenNotifications">Phiếu mới '+(unread.length?'<span class="notif-count">'+unread.length+'</span>':'0')+'</button></div>'
+   +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px"><div class="dash-note" id="dashUpdated">Cập nhật '+esc(d.updated)+(historyLoaded?'':' · nhật ký tải khi cần')+'</div><button class="seen-btn" id="btnOpenNotifications">Phiếu mới '+(unread.length?'<span class="notif-count">'+unread.length+'</span>':'0')+'</button></div>'
    +'<div class="dash-note" style="margin-top:6px">Dashboard này chỉ theo dõi phương tiện. Tồn, nhập, xuất và đề xuất vật tư xem tại giao diện Kho.</div>';
 
   if(unread.length){
@@ -1957,7 +1961,7 @@ function renderDash(){
   if(clMissing.length)html+='<div class="hist-row"><div class="top"><span><span class="hist-tag d">CHƯA KIỂM</span>'+clMissing.map(x=>'<a href="'+base+'?xe='+encodeURIComponent(x.ma)+'" style="color:var(--deep-2);margin-right:8px">'+esc(x.ma)+'</a>').join('')+'</span></div><div class="sub">Chưa có checklist '+esc(shiftLabel(dashShift))+' hôm nay.</div></div>';
 
   html+='<div class="sec-t">VÁ VỎ GẦN ĐÂY</div>';
-  if(!historyLoaded)html+='<div class="empty-note">Đang tải lịch sử vá vỏ ở nền…</div>';
+  if(!historyLoaded)html+='<div class="empty-note">Nhật ký chưa tải — không ảnh hưởng trạng thái phương tiện phía trên.</div>';
   else if(!vavoRecent.length)html+='<div class="empty-note">Chưa có ghi nhận vá vỏ.</div>';
   if(historyLoaded)vavoRecent.slice(0,10).forEach(r=>{html+='<div class="hist-row"><div class="top"><span><span class="hist-tag d">VÁ VỎ</span><b>'+esc(r.maXe)+'</b> — '+esc(r.noiDung)+'</span><b>'+esc(r.ngay)+'</b></div><div class="sub">Tài xế '+esc(r.taiXe)+(r.ghiChu?' · '+esc(r.ghiChu):'')+' · '+esc(r.txnId||'')+'</div></div>';});
 
@@ -1988,11 +1992,14 @@ function renderDash(){
     function renderDaList(){let list=state.dashActs.filter(a=>state.daType==="all"||a.t===state.daType);const df=$("daDate").value;if(df)list=list.filter(a=>a.ngay===isoToVN(df));else list=list.slice(0,50);const box=$("daList");box.innerHTML="";if(!list.length){box.innerHTML='<div class="empty-note">Không có phiếu khớp bộ lọc.</div>';return;}list.forEach(a=>box.insertAdjacentHTML("beforeend",'<div class="hist-row'+(a.neg?' neg':'')+'"><div class="top"><span>'+a.tag+a.top+'</span><b>'+esc(a.ngay)+'</b></div><div class="sub">Gửi '+esc(a.ts)+' · '+a.sub+'</div></div>'));}
     renderDaList();
   }else{
-    html+='<div class="sec-t">NHẬT KÝ PHƯƠNG TIỆN</div><div class="empty-note">Đang tải nhật ký phương tiện ở nền… Dashboard phía trên vẫn sử dụng bình thường.</div>';
+    html+='<div class="sec-t">NHẬT KÝ PHƯƠNG TIỆN</div>'
+      +'<div class="empty-note">'+(state.dashboardDetailsError?esc(state.dashboardDetailsError):'Để giảm tải Apps Script, nhật ký không tự quét khi mở Dashboard.')+'</div>'
+      +'<button class="load-more" id="btnLoadDashHistory" type="button" '+(state.dashboardDetailsLoading?'disabled':'')+'>'+(state.dashboardDetailsLoading?'Đang tải nhật ký…':'Tải nhật ký khi cần')+'</button>';
     $("main").innerHTML=html;
     document.querySelectorAll('[data-dshift]').forEach(btn=>btn.onclick=()=>{sessionStorage.setItem('ktvt_dash_shift',btn.dataset.dshift);renderDash();});
     $("btnOpenNotifications").onclick=openNotificationInbox;
     const btnAll=document.getElementById("btnNotifAll");if(btnAll)btnAll.onclick=openNotificationInbox;
+    const btnHist=document.getElementById("btnLoadDashHistory");if(btnHist)btnHist.onclick=()=>{state.dashboardDetailsError="";loadDashboardDetails();renderDash();};
     bindNotificationButtons(mainRoot());
     return;
   }
