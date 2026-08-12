@@ -446,6 +446,7 @@ body.dash header .hd-inner{max-width:760px}
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5DhF5CrrvJokInDR34EKQIcvlWhOT5XX5v-AIf83wa8TafhUCnQ/exec";
 const APP_VERSION = "2026.07.24-RC2.4.17-STOCK-ADJUSTMENT-VIEW-HF2";
 const CONNECTIVITY_HOTFIX = "2026.08.12-QR-CONNECTIVITY-HF2-PIN-RETAINED";
+const VIEW_LOAD_HOTFIX = "2026.08.12-XE-FAST-VIEW-HF3";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -482,7 +483,8 @@ const state = {
   renderMetrics:{},
   connection:"idle",lastSuccessAt:0,lastRequestMs:0,lastServerMs:0,connectionFailures:0,
   pollDelayMs:5000,pollRequestSeq:0,viewRequestSeq:0,connectionTicker:null,
-  dashboardDetailsLoading:false,dashboardDetailsRequestSeq:0,dashboardDetailsLoadedSeq:-1
+  dashboardDetailsLoading:false,dashboardDetailsRequestSeq:0,dashboardDetailsLoadedSeq:-1,
+  xeDetailsLoading:false,xeDetailsRequestSeq:0,xeDetailsLoadedSeq:-1
 };
 
 // Xóa PIN từng được các phiên bản cũ lưu trong trình duyệt.
@@ -873,6 +875,38 @@ async function loadDashboardDetails(){
   }
 }
 
+function mergeXeDetails_(details){
+  if(!state.data||MODE!=="xe")return;
+  state.data.history=details.history||state.data.history||{};
+  state.data.historyLoaded=true;
+  state.data.historyUpdated=details.updated||"";
+  state.xeDetailsLoadedSeq=Number(details.latestSeq||0);
+  prepareDataCache(state.data);
+}
+function scheduleXeDetailsLoad_(delay){
+  if(MODE!=="xe"||!state.accessToken)return;
+  setTimeout(loadXeDetails,Math.max(0,Number(delay)||0));
+}
+async function loadXeDetails(){
+  if(MODE!=="xe"||!state.accessToken||state.xeDetailsLoading)return;
+  const requestSeq=++state.xeDetailsRequestSeq;
+  state.xeDetailsLoading=true;
+  try{
+    const j=await apiCall({type:"XE_DETAILS",maXe:XE},30000);
+    if(requestSeq!==state.xeDetailsRequestSeq)return;
+    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
+    if(j.status!=="ok"||j.versionMismatch||j.version!==APP_VERSION)throw new Error(j.message||"Không tải được lịch sử xe.");
+    mergeXeDetails_(j);
+    // Chỉ tự render lại Hồ sơ (tab đọc). Không đụng form đang nhập để tránh mất dữ liệu người dùng.
+    if(state.tab==="hoso"){
+      state.tabDirty.hoso=true;
+      openTab("hoso");
+    }
+  }catch(err){
+    try{console.warn("[KTVT] XE_DETAILS",err);}catch(_){}
+  }finally{state.xeDetailsLoading=false;}
+}
+
 async function loadData(){
   if(!state.accessToken){$("ovAccess").classList.add("show");return;}
   const requestSeq=++state.viewRequestSeq;
@@ -883,7 +917,7 @@ async function loadData(){
   window.__ktvtActivePane=null;
   if(!hadData)mainRoot().innerHTML='<div class="load">Đang tải dữ liệu…</div>';
   try{
-    const j=await apiCall({type:"VIEW"},30000);
+    const j=await apiCall({type:"VIEW"},MODE==="xe"?15000:30000);
     if(requestSeq!==state.viewRequestSeq)return;
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok")throw new Error(j.message||"Không tải được dữ liệu.");
@@ -899,6 +933,7 @@ async function loadData(){
     setConnectionStatus("online",j.cacheHit?"Đã đồng bộ từ cache hiển thị":"Đã đồng bộ dữ liệu mới");
     initUI();
     if(MODE==="dash")scheduleDashboardDetailsLoad_(80);
+    if(MODE==="xe"&&!j.historyLoaded)scheduleXeDetailsLoad_(120);
   }catch(err){
     if(requestSeq!==state.viewRequestSeq)return;
     setConnectionStatus("offline",(err&&err.name==="AbortError"?"Server phản hồi quá lâu":"Mất kết nối")+" — "+(hadData?"giữ dữ liệu cũ":"chưa tải được dữ liệu"));
@@ -1119,6 +1154,7 @@ function renderHoSo(){
   const pending = (d.pendingQC||[]).filter(o=>o.maXe===XE);
   const kd = (d.inspection||[]).find(o=>o.maXe===XE) || {maXe:XE,status:"NO_DATA",daysLeft:null};
   let html = '<div class="warn-note">⚠️ Số liệu sửa chữa/bảo dưỡng là ghi nhận vận hành. Hồ sơ kiểm định bên dưới lấy từ tab KIEM_DINH_XE.</div>';
+  if(d.historyLoaded===false) html += '<div class="hint" id="xeHistoryLoading">Đang tải lịch sử chi tiết ở nền… Có thể thao tác ngay, không cần chờ.</div>';
 
   html += '<div class="sec-t">KIỂM ĐỊNH PHƯƠNG TIỆN</div>'
     +'<div class="inspection-card '+inspectionClass(kd.status)+'">'
