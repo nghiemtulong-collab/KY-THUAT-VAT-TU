@@ -449,6 +449,7 @@ const CONNECTIVITY_HOTFIX = "2026.08.12-QR-CONNECTIVITY-HF2-PIN-RETAINED";
 const VIEW_LOAD_HOTFIX = "2026.08.12-XE-FAST-VIEW-HF3";
 const READ_PATH_HOTFIX = "2026.08.12-READ-PATH-NOWRITE-HF4";
 const DASH_STABILITY_HOTFIX = "2026.08.12-DASH-LOAD-SHED-HF5";
+const READ_MODEL_HOTFIX = "2026.08.12-READ-MODEL-FIRST-HF7";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -486,7 +487,8 @@ const state = {
   connection:"idle",lastSuccessAt:0,lastRequestMs:0,lastServerMs:0,connectionFailures:0,
   pollDelayMs:15000,pollRequestSeq:0,viewRequestSeq:0,connectionTicker:null,
   dashboardDetailsLoading:false,dashboardDetailsRequestSeq:0,dashboardDetailsLoadedSeq:-1,dashboardDetailsError:"",dashboardDetailsWanted:false,
-  xeDetailsLoading:false,xeDetailsRequestSeq:0,xeDetailsLoadedSeq:-1,xeDetailsTimer:null
+  dashboardNotificationsLoading:false,dashboardNotificationsLoaded:false,dashboardNotificationsRequestSeq:0,dashboardNotificationsTimer:null,dashboardNotificationsError:"",
+  xeDetailsLoading:false,xeDetailsRequestSeq:0,xeDetailsLoadedSeq:-1,xeDetailsTimer:null,xeDetailsError:""
 };
 
 // Xóa PIN từng được các phiên bản cũ lưu trong trình duyệt.
@@ -752,6 +754,11 @@ function stopDashRefresh(){
     clearTimeout(state.dashAlertTimer);
     state.dashAlertTimer=null;
   }
+  if(state.dashboardNotificationsTimer){
+    clearTimeout(state.dashboardNotificationsTimer);
+    state.dashboardNotificationsTimer=null;
+  }
+  state.dashboardNotificationsRequestSeq++;
   state.dashAlertQueue=[];
   state.dashAlertActive=false;
   const liveBox=document.getElementById("dashLiveAlert");
@@ -881,6 +888,48 @@ async function loadDashboardDetails(){
     if(MODE==="dash"&&state.data&&!state.data.historyLoaded)renderDash();
   }
 }
+function mergeDashboardNotificationsHF7_(payload){
+  if(!state.data||MODE!=="dash")return;
+  state.data.notifications=Array.isArray(payload.notifications)?payload.notifications:[];
+  state.data.notificationsLoaded=true;
+  state.dashboardNotificationsLoaded=true;
+  state.dashboardNotificationsError="";
+}
+function scheduleDashboardNotificationsLoad_(delay,force){
+  if(MODE!=="dash"||!state.accessToken)return;
+  if(state.dashboardNotificationsLoaded&&!force)return;
+  if(state.dashboardNotificationsTimer)clearTimeout(state.dashboardNotificationsTimer);
+  state.dashboardNotificationsTimer=setTimeout(()=>{
+    state.dashboardNotificationsTimer=null;
+    if(!document.hidden)loadDashboardNotificationsHF7_(force===true);
+  },Math.max(0,Number(delay)||0));
+}
+async function loadDashboardNotificationsHF7_(force){
+  if(MODE!=="dash"||!state.accessToken||state.dashboardNotificationsLoading)return false;
+  if(state.dashboardNotificationsLoaded&&!force)return true;
+  const requestSeq=++state.dashboardNotificationsRequestSeq;
+  state.dashboardNotificationsLoading=true;
+  state.dashboardNotificationsError="";
+  try{
+    const j=await apiCall({type:"DASH_NOTIFICATIONS",limit:50},10000);
+    if(requestSeq!==state.dashboardNotificationsRequestSeq)return false;
+    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return false;}
+    if(j.status!=="ok"||j.versionMismatch||j.version!==APP_VERSION)throw new Error(j.message||"Không tải được phiếu mới.");
+    mergeDashboardNotificationsHF7_(j);
+    renderDash();
+    return true;
+  }catch(err){
+    state.dashboardNotificationsError=err&&err.name==="AbortError"
+      ?"Phiếu mới phản hồi quá 10 giây — Dashboard chính vẫn hoạt động."
+      :(err&&err.message?err.message:"Không tải được phiếu mới.");
+    try{console.warn("[KTVT] DASH_NOTIFICATIONS",err);}catch(_){}
+    if(MODE==="dash"&&state.data)renderDash();
+    return false;
+  }finally{
+    state.dashboardNotificationsLoading=false;
+  }
+}
+
 function mergeXeDetails_(details){
   if(!state.data||MODE!=="xe")return;
   state.data.history=details.history||state.data.history||{};
@@ -892,34 +941,31 @@ function mergeXeDetails_(details){
 function cancelXeDetailsLoad_(){
   if(state.xeDetailsTimer){clearTimeout(state.xeDetailsTimer);state.xeDetailsTimer=null;}
 }
-function scheduleXeDetailsLoad_(delay){
-  if(MODE!=="xe"||!state.accessToken||state.data&&state.data.historyLoaded)return;
-  cancelXeDetailsLoad_();
-  state.xeDetailsTimer=setTimeout(()=>{
-    state.xeDetailsTimer=null;
-    // HF4: chỉ tải lịch sử nặng nếu người dùng vẫn đang ở Hồ sơ.
-    // Chuyển sang Báo hỏng/Sửa chữa/Bảo dưỡng/Checklist thì không tạo background scan 8 sheet.
-    if(state.tab==="hoso"&&!document.hidden)loadXeDetails();
-  },Math.max(0,Number(delay)||0));
-}
 async function loadXeDetails(){
   if(MODE!=="xe"||!state.accessToken||state.xeDetailsLoading)return;
   const requestSeq=++state.xeDetailsRequestSeq;
   state.xeDetailsLoading=true;
+  state.xeDetailsError="";
+  const btn=document.getElementById("btnLoadXeHistory");
+  if(btn){btn.disabled=true;btn.textContent="Đang tải lịch sử…";}
   try{
     const j=await apiCall({type:"XE_DETAILS",maXe:XE},30000);
     if(requestSeq!==state.xeDetailsRequestSeq)return;
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok"||j.versionMismatch||j.version!==APP_VERSION)throw new Error(j.message||"Không tải được lịch sử xe.");
     mergeXeDetails_(j);
-    // Chỉ tự render lại Hồ sơ (tab đọc). Không đụng form đang nhập để tránh mất dữ liệu người dùng.
+  }catch(err){
+    state.xeDetailsError=err&&err.name==="AbortError"
+      ?"Lịch sử phản hồi quá 30 giây. Hồ sơ nhanh và các form nghiệp vụ vẫn dùng được."
+      :(err&&err.message?err.message:"Không tải được lịch sử xe.");
+    try{console.warn("[KTVT] XE_DETAILS",err);}catch(_){}
+  }finally{
+    state.xeDetailsLoading=false;
     if(state.tab==="hoso"){
       state.tabDirty.hoso=true;
       openTab("hoso");
     }
-  }catch(err){
-    try{console.warn("[KTVT] XE_DETAILS",err);}catch(_){}
-  }finally{state.xeDetailsLoading=false;}
+  }
 }
 
 async function loadData(){
@@ -936,7 +982,8 @@ async function loadData(){
     if(requestSeq!==state.viewRequestSeq)return;
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok")throw new Error(j.message||"Không tải được dữ liệu.");
-    state.data=j;state.versionOk=!j.versionMismatch&&j.version===APP_VERSION;document.documentElement.dataset.appVersion=APP_VERSION;document.documentElement.dataset.readPathHotfix=READ_PATH_HOTFIX;
+    state.data=j;state.versionOk=!j.versionMismatch&&j.version===APP_VERSION;document.documentElement.dataset.appVersion=APP_VERSION;document.documentElement.dataset.readPathHotfix=READ_PATH_HOTFIX;document.documentElement.dataset.readModelHotfix=READ_MODEL_HOTFIX;
+    if(MODE==="dash"){state.dashboardNotificationsLoaded=false;state.dashboardNotificationsError="";state.data.notifications=[];state.data.notificationsLoaded=false;}
     if(previousTab)state.tab=previousTab;
     prepareDataCache(j);
     resetTabPanes();
@@ -976,8 +1023,10 @@ async function refreshViewSilently(){
     const canSkip=prevSeq===nextSeq&&state.lastDashRenderDay===day&&(Date.now()-state.lastDashRenderAt)<300000;
     if(canSkip){state.data.updated=j.updated;const updated=document.getElementById("dashUpdated");if(updated)updated.firstChild.textContent="Cập nhật "+j.updated;return;}
     const oldHistory=state.data&&state.data.historyLoaded?state.data.history:null;
+    const oldNotifications=state.dashboardNotificationsLoaded&&state.data&&Array.isArray(state.data.notifications)?state.data.notifications:null;
     state.data=j;
     if(oldHistory){state.data.history=oldHistory;state.data.historyLoaded=true;state.data.historyStale=true;}
+    if(oldNotifications){state.data.notifications=oldNotifications;state.data.notificationsLoaded=true;}
     state.versionOk=true;prepareDataCache(state.data);renderDash();
   }catch(err){state.connectionFailures++;setConnectionStatus("offline",(err&&err.name==="AbortError"?"Server phản hồi quá lâu":"Mất kết nối")+" — giữ dữ liệu cũ");}
   finally{state.refreshing=false;}
@@ -1001,7 +1050,10 @@ async function pollDashboardEvents(){
       if(!["BAO_HONG","SUA_CHUA","BAO_DUONG","CHECKLIST_DAU_CA"].includes(t))return false;
       return t!=="CHECKLIST_DAU_CA"||String(e.result||"").toUpperCase()==="KHONG_DAT";
     }).sort((a,b)=>Number(a.eventSeq||0)-Number(b.eventSeq||0)).forEach(queueDashLiveAlert);
-    if(j.changed||Number(j.latestSeq||0)!==sinceSeq)await refreshViewSilently();
+    if(j.changed||Number(j.latestSeq||0)!==sinceSeq){
+      await refreshViewSilently();
+      if(events.length){state.dashboardNotificationsLoaded=false;scheduleDashboardNotificationsLoad_(700,true);}
+    }
   }catch(err){state.connectionFailures++;state.pollDelayMs=Math.min(60000,15000*Math.pow(2,Math.min(2,state.connectionFailures)));setConnectionStatus("offline",(err&&err.name==="AbortError"?"Heartbeat quá 8 giây":"Mất kết nối")+" — thử lại sau "+Math.round(state.pollDelayMs/1000)+" giây");}
   finally{state.polling=false;scheduleDashPoll_();}
 }
@@ -1039,11 +1091,17 @@ function notificationRowHTML(n, compact=false){
 function bindNotificationButtons(root=document){
   root.querySelectorAll('[data-notif-seen]').forEach(btn=>{btn.onclick=async()=>{await markNotificationsSeen([btn.dataset.notifSeen],false);};});
 }
-function openNotificationInbox(){
+async function openNotificationInbox(){
+  if(MODE==="dash"&&!state.dashboardNotificationsLoaded){
+    await loadDashboardNotificationsHF7_(true);
+  }
   const list=unreadNotifications();
   const box=document.getElementById('notifOverlayList');
-  box.innerHTML=list.length?list.map(n=>notificationRowHTML(n)).join(''):'<div class="empty-note">Không có phiếu mới chưa xem.</div>';
-  document.getElementById('notifOverlayDesc').textContent=list.length?list.length+' phiếu chưa xem — dữ liệu lấy từ DASH_NOTIFICATION_LOG.':'Không có phiếu mới chưa xem.';
+  box.innerHTML=list.length?list.map(n=>notificationRowHTML(n)).join('')
+    :'<div class="empty-note">'+(state.dashboardNotificationsError?esc(state.dashboardNotificationsError):'Không có phiếu mới chưa xem.')+'</div>';
+  document.getElementById('notifOverlayDesc').textContent=list.length
+    ?list.length+' phiếu chưa xem — dữ liệu tải tách riêng từ DASH_NOTIFICATION_LOG.'
+    :(state.dashboardNotificationsError||'Không có phiếu mới chưa xem.');
   document.getElementById('btnNotifMarkAll').style.display=list.length?'block':'none';
   bindNotificationButtons(box);
   document.getElementById('ovNotifications').classList.add('show');
@@ -1089,6 +1147,8 @@ function initUI(){
     state.lastDashAlertSeq=Number(d.latestSeq||0);
     state.lastDashPollSeq=Number(d.latestSeq||0);
     startDashRefresh();
+    // HF7: Dashboard render trước; notification log tải tách riêng sau.
+    scheduleDashboardNotificationsLoad_(1200,false);
     setTimeout(pollDashboardEvents,800);
     return;
   }
@@ -1166,13 +1226,11 @@ function inspectionDueText(kd){
 }
 function renderHoSo(){
   const d = state.data;
-  if(MODE==="xe"&&!d.historyLoaded&&!state.xeDetailsLoading)scheduleXeDetailsLoad_(2500);
   const hm = d.hangmuc.filter(h => h.maXe === XE);
   const open = d.openBH.filter(o => o.maXe === XE);
   const pending = (d.pendingQC||[]).filter(o=>o.maXe===XE);
   const kd = (d.inspection||[]).find(o=>o.maXe===XE) || {maXe:XE,status:"NO_DATA",daysLeft:null};
   let html = '<div class="warn-note">⚠️ Số liệu sửa chữa/bảo dưỡng là ghi nhận vận hành. Hồ sơ kiểm định bên dưới lấy từ tab KIEM_DINH_XE.</div>';
-  if(d.historyLoaded===false) html += '<div class="hint" id="xeHistoryLoading">Đang tải lịch sử chi tiết ở nền… Có thể thao tác ngay, không cần chờ.</div>';
 
   html += '<div class="sec-t">KIỂM ĐỊNH PHƯƠNG TIỆN</div>'
     +'<div class="inspection-card '+inspectionClass(kd.status)+'">'
@@ -1253,10 +1311,16 @@ function renderHoSo(){
   ev.sort((a,b)=> sortKey(b) > sortKey(a) ? 1 : -1);
   state.hosoEv = ev;
 
-  html += '<div class="sec-t">LỊCH SỬ PHƯƠNG TIỆN</div>'
-       + '<div class="chips" id="hsChips"><button data-t="all" class="on">Tất cả</button><button data-t="bh">Báo hỏng</button><button data-t="x">Xuất vật tư</button><button data-t="sc">Sửa chữa</button><button data-t="qc">QC</button><button data-t="bd">Bảo dưỡng</button><button data-t="kd">Kiểm định</button></div>'
-       + '<div class="search-box" style="display:flex;gap:8px;padding-top:0"><input type="date" id="hsDate" style="flex:1;border:2px solid var(--line);border-radius:12px;padding:10px 12px;font-family:inherit;font-size:15px;background:var(--white)"><button id="hsDateAll" class="seen-btn">Mọi ngày</button></div>'
-       + '<div class="hint">Không lọc ngày: 50 dòng gần nhất. Tra sâu hơn trong Google Sheet.</div><div id="hsList"></div>';
+  html += '<div class="sec-t">LỊCH SỬ PHƯƠNG TIỆN</div>';
+  if(d.historyLoaded===true){
+    html += '<div class="chips" id="hsChips"><button data-t="all" class="on">Tất cả</button><button data-t="bh">Báo hỏng</button><button data-t="x">Xuất vật tư</button><button data-t="sc">Sửa chữa</button><button data-t="qc">QC</button><button data-t="bd">Bảo dưỡng</button><button data-t="kd">Kiểm định</button></div>'
+      + '<div class="search-box" style="display:flex;gap:8px;padding-top:0"><input type="date" id="hsDate" style="flex:1;border:2px solid var(--line);border-radius:12px;padding:10px 12px;font-family:inherit;font-size:15px;background:var(--white)"><button id="hsDateAll" class="seen-btn">Mọi ngày</button></div>'
+      + '<div class="hint">Không lọc ngày: 50 dòng gần nhất. Tra sâu hơn trong Google Sheet.</div><div id="hsList"></div>';
+  }else{
+    html += '<div class="empty-note">'+(state.xeDetailsError?esc(state.xeDetailsError):'HF7 không tự quét lịch sử để ưu tiên QR và nghiệp vụ chính.')+'</div>'
+      + '<button class="load-more" id="btnLoadXeHistory" type="button" '+(state.xeDetailsLoading?'disabled':'')+'>'
+      +(state.xeDetailsLoading?'Đang tải lịch sử…':'Tải lịch sử chi tiết khi cần')+'</button>';
+  }
   $("main").innerHTML = html;
   if(state.accessScope==="DASHBOARD"){
     const editBtn=document.getElementById("btnEditInspection");
@@ -1301,8 +1365,14 @@ function renderHoSo(){
       box.insertAdjacentHTML("beforeend",'<div class="hist-row'+(e.neg?' neg':'')+'"><div class="top"><span>'+tag+e.top+'</span><b>'+e.val+'</b></div><div class="sub">'+e.sub+'</div></div>');
     });
   }
-  document.querySelectorAll("#hsChips button").forEach(b=>{b.onclick=()=>{hsType=b.dataset.t;document.querySelectorAll("#hsChips button").forEach(x=>x.classList.toggle("on",x===b));renderHsList();};});
-  $("hsDate").addEventListener("change",renderHsList); $("hsDateAll").onclick=()=>{$("hsDate").value="";renderHsList();}; renderHsList();
+  const btnLoadXeHistory=document.getElementById("btnLoadXeHistory");
+  if(btnLoadXeHistory)btnLoadXeHistory.onclick=loadXeDetails;
+  if(d.historyLoaded===true){
+    document.querySelectorAll("#hsChips button").forEach(b=>{b.onclick=()=>{hsType=b.dataset.t;document.querySelectorAll("#hsChips button").forEach(x=>x.classList.toggle("on",x===b));renderHsList();};});
+    $("hsDate").addEventListener("change",renderHsList);
+    $("hsDateAll").onclick=()=>{$("hsDate").value="";renderHsList();};
+    renderHsList();
+  }
 }
 
 /* ==================== BÁO HỎNG (KHÔNG PIN) ==================== */
@@ -1926,10 +1996,10 @@ function renderDash(){
    +'<div class="count-card'+(open.length?' bad':'')+'"><div class="num">'+open.length+'</div><div class="lb">SỰ CỐ MỞ</div></div>'
    +'<div class="count-card'+(pendingQC.length?' bad':'')+'"><div class="num">'+pendingQC.length+'</div><div class="lb">CHỜ QC</div></div>'
    +'<div class="count-card'+(over.length?' bad':'')+'"><div class="num">'+over.length+'</div><div class="lb">QUÁ HẠN BD</div></div></div>'
-   +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px"><div class="dash-note" id="dashUpdated">Cập nhật '+esc(d.updated)+(historyLoaded?'':' · nhật ký tải khi cần')+'</div><button class="seen-btn" id="btnOpenNotifications">Phiếu mới '+(unread.length?'<span class="notif-count">'+unread.length+'</span>':'0')+'</button></div>'
+   +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px"><div class="dash-note" id="dashUpdated">Cập nhật '+esc(d.updated)+(historyLoaded?'':' · nhật ký tải khi cần')+'</div><button class="seen-btn" id="btnOpenNotifications">Phiếu mới '+(state.dashboardNotificationsLoaded?(unread.length?'<span class="notif-count">'+unread.length+'</span>':'0'):(state.dashboardNotificationsLoading?'…':'—'))+'</button></div>'
    +'<div class="dash-note" style="margin-top:6px">Dashboard này chỉ theo dõi phương tiện. Tồn, nhập, xuất và đề xuất vật tư xem tại giao diện Kho.</div>';
 
-  if(unread.length){
+  if(state.dashboardNotificationsLoaded&&unread.length){
     html+='<div class="notif-box"><div class="notif-head"><b>🔔 '+unread.length+' PHIẾU MỚI</b><button class="notif-link" id="btnNotifAll">Xem tất cả</button></div>'
       +unread.slice(0,3).map(n=>notificationRowHTML(n,true)).join('')
       +(unread.length>3?'<div class="dash-note" style="margin-top:7px">Còn '+(unread.length-3)+' phiếu khác.</div>':'')
