@@ -447,6 +447,7 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGJ1NF-pJEh-xPnz_5D
 const APP_VERSION = "2026.07.24-RC2.4.17-STOCK-ADJUSTMENT-VIEW-HF2";
 const CONNECTIVITY_HOTFIX = "2026.08.12-QR-CONNECTIVITY-HF2-PIN-RETAINED";
 const VIEW_LOAD_HOTFIX = "2026.08.12-XE-FAST-VIEW-HF3";
+const READ_PATH_HOTFIX = "2026.08.12-READ-PATH-NOWRITE-HF4";
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -484,7 +485,7 @@ const state = {
   connection:"idle",lastSuccessAt:0,lastRequestMs:0,lastServerMs:0,connectionFailures:0,
   pollDelayMs:5000,pollRequestSeq:0,viewRequestSeq:0,connectionTicker:null,
   dashboardDetailsLoading:false,dashboardDetailsRequestSeq:0,dashboardDetailsLoadedSeq:-1,
-  xeDetailsLoading:false,xeDetailsRequestSeq:0,xeDetailsLoadedSeq:-1
+  xeDetailsLoading:false,xeDetailsRequestSeq:0,xeDetailsLoadedSeq:-1,xeDetailsTimer:null
 };
 
 // Xóa PIN từng được các phiên bản cũ lưu trong trình duyệt.
@@ -737,6 +738,7 @@ function showAccessError(msg){
   $("accessErr").textContent=msg;$("accessErr").style.display="block";$("accessPin").value="";$("accessPin").focus();
 }
 function stopDashRefresh(){
+  cancelXeDetailsLoad_();
   if(state.dashTimer){
     clearTimeout(state.dashTimer);
     state.dashTimer=null;
@@ -883,9 +885,18 @@ function mergeXeDetails_(details){
   state.xeDetailsLoadedSeq=Number(details.latestSeq||0);
   prepareDataCache(state.data);
 }
+function cancelXeDetailsLoad_(){
+  if(state.xeDetailsTimer){clearTimeout(state.xeDetailsTimer);state.xeDetailsTimer=null;}
+}
 function scheduleXeDetailsLoad_(delay){
-  if(MODE!=="xe"||!state.accessToken)return;
-  setTimeout(loadXeDetails,Math.max(0,Number(delay)||0));
+  if(MODE!=="xe"||!state.accessToken||state.data&&state.data.historyLoaded)return;
+  cancelXeDetailsLoad_();
+  state.xeDetailsTimer=setTimeout(()=>{
+    state.xeDetailsTimer=null;
+    // HF4: chỉ tải lịch sử nặng nếu người dùng vẫn đang ở Hồ sơ.
+    // Chuyển sang Báo hỏng/Sửa chữa/Bảo dưỡng/Checklist thì không tạo background scan 8 sheet.
+    if(state.tab==="hoso"&&!document.hidden)loadXeDetails();
+  },Math.max(0,Number(delay)||0));
 }
 async function loadXeDetails(){
   if(MODE!=="xe"||!state.accessToken||state.xeDetailsLoading)return;
@@ -921,7 +932,7 @@ async function loadData(){
     if(requestSeq!==state.viewRequestSeq)return;
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok")throw new Error(j.message||"Không tải được dữ liệu.");
-    state.data=j;state.versionOk=!j.versionMismatch&&j.version===APP_VERSION;document.documentElement.dataset.appVersion=APP_VERSION;
+    state.data=j;state.versionOk=!j.versionMismatch&&j.version===APP_VERSION;document.documentElement.dataset.appVersion=APP_VERSION;document.documentElement.dataset.readPathHotfix=READ_PATH_HOTFIX;
     if(previousTab)state.tab=previousTab;
     prepareDataCache(j);
     resetTabPanes();
@@ -933,7 +944,7 @@ async function loadData(){
     setConnectionStatus("online",j.cacheHit?"Đã đồng bộ từ cache hiển thị":"Đã đồng bộ dữ liệu mới");
     initUI();
     if(MODE==="dash")scheduleDashboardDetailsLoad_(80);
-    if(MODE==="xe"&&!j.historyLoaded)scheduleXeDetailsLoad_(120);
+    // HF4: không tự quét lịch sử nặng ngay sau đăng nhập. renderHoSo sẽ lazy-load nếu người dùng thực sự ở tab Hồ sơ.
   }catch(err){
     if(requestSeq!==state.viewRequestSeq)return;
     setConnectionStatus("offline",(err&&err.name==="AbortError"?"Server phản hồi quá lâu":"Mất kết nối")+" — "+(hadData?"giữ dữ liệu cũ":"chưa tải được dữ liệu"));
@@ -1111,7 +1122,9 @@ function buildTabs(list){
 }
 
 function openTab(id){
-  state.tab=id;state.slip={};state.slipKind=null;state.xuatCategories={};state.xuatVehicles={};state.xuatAlloc={};state.xuatOther="";document.body.classList.remove("adjusting");$("bar").classList.remove("show");
+  state.tab=id;
+  if(id!=="hoso")cancelXeDetailsLoad_();
+  state.slip={};state.slipKind=null;state.xuatCategories={};state.xuatVehicles={};state.xuatAlloc={};state.xuatOther="";document.body.classList.remove("adjusting");$("bar").classList.remove("show");
   const fn={hoso:renderHoSo,baohong:renderBaoHong,suachua:renderSuaChua,baoduong:renderBaoDuong,checklist:renderChecklist,vavo:renderVaVo,ton:renderTon,xuat:renderXuat,nhap:renderNhap,dexuat:renderDeXuat,lichsu:renderLichSu,qc:renderQC}[id];
   if(!fn) return;
 
@@ -1149,6 +1162,7 @@ function inspectionDueText(kd){
 }
 function renderHoSo(){
   const d = state.data;
+  if(MODE==="xe"&&!d.historyLoaded&&!state.xeDetailsLoading)scheduleXeDetailsLoad_(2500);
   const hm = d.hangmuc.filter(h => h.maXe === XE);
   const open = d.openBH.filter(o => o.maXe === XE);
   const pending = (d.pendingQC||[]).filter(o=>o.maXe===XE);
