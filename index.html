@@ -450,6 +450,14 @@ const VIEW_LOAD_HOTFIX = "2026.08.12-XE-FAST-VIEW-HF3";
 const READ_PATH_HOTFIX = "2026.08.12-READ-PATH-NOWRITE-HF4";
 const DASH_STABILITY_HOTFIX = "2026.08.12-DASH-LOAD-SHED-HF5";
 const READ_MODEL_HOTFIX = "2026.08.12-READ-MODEL-FIRST-HF7";
+const LOGIN_STABILITY_HOTFIX = "2026.08.13-LOGIN-STABILITY-HF8";
+const KEEP_TOKEN_ACROSS_TABS = true;
+const TOKEN_LOCAL_TTL_HOURS_DEFAULT = 11;
+const VIEW_TIMEOUT_XE_MS = 30000;
+const VIEW_TIMEOUT_OTHER_MS = 45000;
+const POLL_TIMEOUT_MS = 15000;
+const LOGIN_TIMEOUT_MS = 45000;
+const VIEW_MAX_RETRY = 3;
 // ==========================================================
 
 const mainRoot = () => document.getElementById("main");
@@ -651,27 +659,50 @@ function randomId(prefix="id"){
   return prefix+"_"+Date.now().toString(36)+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
 }
 function initClientId(){
-  try{
-    let id = localStorage.getItem("ktvt_client_id");
-    if(!id){ id = randomId("client"); localStorage.setItem("ktvt_client_id", id); }
-    return id;
-  }catch(_){ return randomId("client"); }
+  const KEY = "ktvt_client_id";
+  let id = "";
+  try{ id = localStorage.getItem(KEY) || ""; }catch(_){ }
+  if(!id){ try{ id = sessionStorage.getItem(KEY) || ""; }catch(_){ } }
+  if(!id) id = randomId("client");
+  try{ localStorage.setItem(KEY, id); }catch(_){ }
+  try{ sessionStorage.setItem(KEY, id); }catch(_){ }
+  return id;
 }
 state.clientId = initClientId();
 function makeRequestId(){ return randomId("req"); }
-function authStorageKey(scope=state.accessScope){
+function authStorageKey(scope = state.accessScope){
   return scope === "XE" ? "ktvt_access_token_XE_" + XE : "ktvt_access_token_" + scope;
 }
-function readAccessToken(scope=state.accessScope){
-  try{return sessionStorage.getItem(authStorageKey(scope))||"";}catch(_){return "";}
+function authRecordKey(scope = state.accessScope){ return authStorageKey(scope) + "_rec"; }
+function readAccessToken(scope = state.accessScope){
+  let t = "";
+  try{ t = sessionStorage.getItem(authStorageKey(scope)) || ""; }catch(_){ }
+  if(t) return t;
+  if(!KEEP_TOKEN_ACROSS_TABS) return "";
+  let raw = "";
+  try{ raw = localStorage.getItem(authRecordKey(scope)) || ""; }catch(_){ }
+  if(!raw) return "";
+  let rec = null;
+  try{ rec = JSON.parse(raw); }catch(_){ rec = null; }
+  if(!rec || !rec.t || Number(rec.exp || 0) <= Date.now()){
+    try{ localStorage.removeItem(authRecordKey(scope)); }catch(_){ }
+    return "";
+  }
+  try{ sessionStorage.setItem(authStorageKey(scope), rec.t); }catch(_){ }
+  return rec.t;
 }
-function saveAccessToken(token,scope=state.accessScope){
-  try{sessionStorage.setItem(authStorageKey(scope),token);}catch(_){}
-  state.accessToken=token||"";
+function saveAccessToken(token, scope = state.accessScope, expiresHours){
+  try{ sessionStorage.setItem(authStorageKey(scope), token); }catch(_){ }
+  if(KEEP_TOKEN_ACROSS_TABS){
+    const h = Math.max(1, Math.min(23, Number(expiresHours) || TOKEN_LOCAL_TTL_HOURS_DEFAULT) - 1);
+    try{ localStorage.setItem(authRecordKey(scope), JSON.stringify({t:token, exp:Date.now() + h * 3600000})); }catch(_){ }
+  }
+  state.accessToken = token || "";
 }
-function clearAccessToken(scope=state.accessScope){
-  try{sessionStorage.removeItem(authStorageKey(scope));}catch(_){}
-  state.accessToken="";
+function clearAccessToken(scope = state.accessScope){
+  try{ sessionStorage.removeItem(authStorageKey(scope)); }catch(_){ }
+  try{ localStorage.removeItem(authRecordKey(scope)); }catch(_){ }
+  state.accessToken = "";
 }
 function switchAccessScope(scope){
   state.accessScope=scope;
@@ -849,7 +880,7 @@ function requireRelogin(msg){
   showAccessError(msg||"Phiên đăng nhập không còn hiệu lực. Đăng nhập lại.");
 }
 async function loginAccess(pin){
-  return rawPost({type:"AUTH_LOGIN",accessScope:state.accessScope,maXe:(state.accessScope==="XE"?XE:""),accessPin:pin,clientId:state.clientId,clientVersion:APP_VERSION},30000);
+  return rawPost({type:"AUTH_LOGIN", accessScope:state.accessScope, maXe:(state.accessScope === "XE" ? XE : ""), accessPin:pin, clientId:state.clientId, clientVersion:APP_VERSION}, LOGIN_TIMEOUT_MS);
 }
 
 function mergeDashboardDetails_(details){
@@ -870,7 +901,7 @@ async function loadDashboardDetails(){
   const requestSeq=++state.dashboardDetailsRequestSeq;
   state.dashboardDetailsLoading=true;state.dashboardDetailsWanted=true;state.dashboardDetailsError="";
   try{
-    const j=await apiCall({type:"DASH_DETAILS"},20000);
+    const j=await apiCall({type:"DASH_DETAILS"},30000);
     if(requestSeq!==state.dashboardDetailsRequestSeq)return;
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok"||j.versionMismatch||j.version!==APP_VERSION)throw new Error(j.message||"Không tải được chi tiết Dashboard.");
@@ -911,7 +942,7 @@ async function loadDashboardNotificationsHF7_(force){
   state.dashboardNotificationsLoading=true;
   state.dashboardNotificationsError="";
   try{
-    const j=await apiCall({type:"DASH_NOTIFICATIONS",limit:50},10000);
+    const j=await apiCall({type:"DASH_NOTIFICATIONS",limit:50},20000);
     if(requestSeq!==state.dashboardNotificationsRequestSeq)return false;
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return false;}
     if(j.status!=="ok"||j.versionMismatch||j.version!==APP_VERSION)throw new Error(j.message||"Không tải được phiếu mới.");
@@ -968,40 +999,64 @@ async function loadXeDetails(){
   }
 }
 
-async function loadData(){
-  if(!state.accessToken){$("ovAccess").classList.add("show");return;}
-  const requestSeq=++state.viewRequestSeq;
-  const hadData=!!state.data;
-  const previousTab=state.tab;
-  setConnectionStatus("syncing",hadData?"Đang cập nhật dữ liệu nền…":"Đang tải dữ liệu…");
+async function loadData(attempt){
+  attempt = Number(attempt || 0);
+  if(!state.accessToken){ $("ovAccess").classList.add("show"); return; }
+  const requestSeq = ++state.viewRequestSeq;
+  const hadData = !!state.data;
+  const previousTab = state.tab;
+  const tryText = attempt ? (" (lần " + (attempt + 1) + "/" + (VIEW_MAX_RETRY + 1) + ")") : "";
+  setConnectionStatus("syncing", hadData ? "Đang cập nhật dữ liệu nền…" : ("Đang tải dữ liệu…" + tryText));
   startConnectionTicker();
-  window.__ktvtActivePane=null;
-  if(!hadData)mainRoot().innerHTML='<div class="load">Đang tải dữ liệu…</div>';
+  window.__ktvtActivePane = null;
+  if(!hadData) mainRoot().innerHTML = '<div class="load">Đang tải dữ liệu…' + esc(tryText) + '</div>';
   try{
-    const j=await apiCall({type:"VIEW"},MODE==="xe"?15000:30000);
-    if(requestSeq!==state.viewRequestSeq)return;
-    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
-    if(j.status!=="ok")throw new Error(j.message||"Không tải được dữ liệu.");
-    state.data=j;state.versionOk=!j.versionMismatch&&j.version===APP_VERSION;document.documentElement.dataset.appVersion=APP_VERSION;document.documentElement.dataset.readPathHotfix=READ_PATH_HOTFIX;document.documentElement.dataset.readModelHotfix=READ_MODEL_HOTFIX;
-    if(MODE==="dash"){state.dashboardNotificationsLoaded=false;state.dashboardNotificationsError="";state.data.notifications=[];state.data.notificationsLoaded=false;}
-    if(previousTab)state.tab=previousTab;
+    const j = await apiCall({type:"VIEW"}, MODE === "xe" ? VIEW_TIMEOUT_XE_MS : VIEW_TIMEOUT_OTHER_MS);
+    if(requestSeq !== state.viewRequestSeq) return;
+    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){ requireRelogin(j.message); return; }
+    if(j.status !== "ok") throw new Error(j.message || "Không tải được dữ liệu.");
+    state.data = j;
+    state.versionOk = !j.versionMismatch && j.version === APP_VERSION;
+    document.documentElement.dataset.appVersion = APP_VERSION;
+    document.documentElement.dataset.readPathHotfix = READ_PATH_HOTFIX;
+    document.documentElement.dataset.readModelHotfix = READ_MODEL_HOTFIX;
+    document.documentElement.dataset.loginStabilityHotfix = LOGIN_STABILITY_HOTFIX;
+    if(MODE === "dash"){
+      state.dashboardNotificationsLoaded = false;
+      state.dashboardNotificationsError = "";
+      state.data.notifications = [];
+      state.data.notificationsLoaded = false;
+    }
+    if(previousTab) state.tab = previousTab;
     prepareDataCache(j);
     resetTabPanes();
     $("ovAccess").classList.remove("show");
     if(!state.versionOk){
-      mainRoot().innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Không được gửi phiếu. Chờ GitHub/Apps Script deploy xong rồi Ctrl+F5.</div>';
-      $("hdSub").textContent="Lệch phiên bản — đã khóa ghi dữ liệu";return;
+      mainRoot().innerHTML = '<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: ' + esc(APP_VERSION) + '<br>Backend: ' + esc(j.version || "không rõ") + '<br>Không được gửi phiếu. Chờ GitHub/Apps Script deploy xong rồi Ctrl+F5.</div>';
+      $("hdSub").textContent = "Lệch phiên bản — đã khóa ghi dữ liệu";
+      return;
     }
-    setConnectionStatus("online",j.cacheHit?"Đã đồng bộ từ cache hiển thị":"Đã đồng bộ dữ liệu mới");
+    state.connectionFailures = 0;
+    setConnectionStatus("online", j.cacheHit ? "Đã đồng bộ từ cache hiển thị" : "Đã đồng bộ dữ liệu mới");
     initUI();
-    // HF5: Dashboard không tự gọi DASH_DETAILS. Snapshot chính mở ngay; lịch sử chỉ tải khi anh Bình bấm yêu cầu.
-    // HF4: hồ sơ XE vẫn lazy-load nếu người dùng thực sự ở tab Hồ sơ.
   }catch(err){
-    if(requestSeq!==state.viewRequestSeq)return;
-    setConnectionStatus("offline",(err&&err.name==="AbortError"?"Server phản hồi quá lâu":"Mất kết nối")+" — "+(hadData?"giữ dữ liệu cũ":"chưa tải được dữ liệu"));
+    if(requestSeq !== state.viewRequestSeq) return;
+    const name = err && err.name ? err.name : "";
+    const msg = String(err && err.message ? err.message : "");
+    const retryable = name === "AbortError" || name === "BackendResponseError" || name === "TypeError"
+      || /Failed to fetch|NetworkError|network|Load failed/i.test(msg);
+    if(retryable && attempt < VIEW_MAX_RETRY){
+      const wait = [1500, 4000, 8000][attempt] || 8000;
+      setConnectionStatus("syncing", "Backend đang bận — tự thử lại sau " + Math.round(wait / 1000) + " giây…");
+      if(!hadData) mainRoot().innerHTML = '<div class="load">Backend đang bận. Đang tự thử lại sau ' + Math.round(wait / 1000) + ' giây… (lần ' + (attempt + 2) + '/' + (VIEW_MAX_RETRY + 1) + ')<br><span style="font-size:12px">Không cần tải lại trang, phiên đăng nhập vẫn giữ.</span></div>';
+      await new Promise(r => setTimeout(r, wait));
+      if(requestSeq !== state.viewRequestSeq) return;
+      return loadData(attempt + 1);
+    }
+    setConnectionStatus("offline", (name === "AbortError" ? "Server phản hồi quá lâu" : "Mất kết nối") + " — " + (hadData ? "giữ dữ liệu cũ" : "chưa tải được dữ liệu"));
     if(!hadData){
-      window.__ktvtActivePane=null;
-      mainRoot().innerHTML='<div class="load">Không tải được dữ liệu — '+esc(err&&err.message?err.message:"kiểm tra mạng")+'. <a href="#" onclick="loadData();return false;">Bấm tải lại</a>.</div>';
+      window.__ktvtActivePane = null;
+      mainRoot().innerHTML = '<div class="load">Không tải được dữ liệu sau ' + (VIEW_MAX_RETRY + 1) + ' lần thử — ' + esc(msg || "kiểm tra mạng") + '.<br>Phiên đăng nhập vẫn còn hiệu lực. <a href="#" onclick="loadData();return false;">Bấm thử lại</a>.</div>';
     }
   }
 }
@@ -1013,7 +1068,7 @@ async function refreshViewSilently(){
   if(MODE!=="dash"||!state.accessToken||state.refreshing)return;
   state.refreshing=true;const requestSeq=++state.viewRequestSeq;setConnectionStatus("syncing");
   try{
-    const j=await apiCall({type:"VIEW"},30000);
+    const j=await apiCall({type:"VIEW"},VIEW_TIMEOUT_OTHER_MS);
     if(requestSeq!==state.viewRequestSeq)return;
     if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
     if(j.status!=="ok")throw new Error(j.message||"Không tải được Dashboard.");
@@ -1033,29 +1088,42 @@ async function refreshViewSilently(){
 }
 
 async function pollDashboardEvents(){
-  if(MODE!=="dash"||document.hidden||!state.accessToken||state.polling)return;
-  state.polling=true;const pollSeq=++state.pollRequestSeq;
+  if(MODE !== "dash" || document.hidden || !state.accessToken || state.polling) return;
+  state.polling = true;
+  const pollSeq = ++state.pollRequestSeq;
   try{
-    const sinceSeq=Math.max(0,Number(state.lastDashPollSeq||0));
-    const j=await apiCall({type:"DASH_POLL",sinceSeq:sinceSeq},8000);
-    if(pollSeq!==state.pollRequestSeq)return;
-    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
-    if(j.status!=="ok")throw new Error(j.message||"Heartbeat lỗi.");
-    if(j.versionMismatch||j.version!==APP_VERSION){state.versionOk=false;stopDashRefresh();window.__ktvtActivePane=null;mainRoot().innerHTML='<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: '+esc(APP_VERSION)+'<br>Backend: '+esc(j.version||"không rõ")+'<br>Đã dừng tự cập nhật và khóa ghi dữ liệu. Ctrl+F5 sau khi deploy hoàn tất.</div>';$('hdSub').textContent="Lệch phiên bản — đã khóa ghi dữ liệu";return;}
-    state.connectionFailures=0;state.pollDelayMs=15000;setConnectionStatus("online");
-    const events=Array.isArray(j.events)?j.events:[];state.lastDashPollSeq=Math.max(sinceSeq,Number(j.latestSeq||0));
-    events.filter(e=>{
-      if(!e)return false;
-      const t=String(e.type||"").toUpperCase();
-      if(!["BAO_HONG","SUA_CHUA","BAO_DUONG","CHECKLIST_DAU_CA"].includes(t))return false;
-      return t!=="CHECKLIST_DAU_CA"||String(e.result||"").toUpperCase()==="KHONG_DAT";
-    }).sort((a,b)=>Number(a.eventSeq||0)-Number(b.eventSeq||0)).forEach(queueDashLiveAlert);
-    if(j.changed||Number(j.latestSeq||0)!==sinceSeq){
-      await refreshViewSilently();
-      if(events.length){state.dashboardNotificationsLoaded=false;scheduleDashboardNotificationsLoad_(700,true);}
+    const sinceSeq = Math.max(0, Number(state.lastDashPollSeq || 0));
+    const j = await apiCall({type:"DASH_POLL", sinceSeq:sinceSeq}, POLL_TIMEOUT_MS);
+    if(pollSeq !== state.pollRequestSeq) return;
+    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){ requireRelogin(j.message); return; }
+    if(j.status !== "ok") throw new Error(j.message || "Heartbeat lỗi.");
+    if(j.versionMismatch || j.version !== APP_VERSION){
+      state.versionOk = false; stopDashRefresh(); window.__ktvtActivePane = null;
+      mainRoot().innerHTML = '<div class="warn-note"><b>⚠ Phiên bản không đồng bộ.</b><br>Frontend: ' + esc(APP_VERSION) + '<br>Backend: ' + esc(j.version || "không rõ") + '<br>Đã dừng tự cập nhật và khóa ghi dữ liệu. Ctrl+F5 sau khi deploy hoàn tất.</div>';
+      $('hdSub').textContent = "Lệch phiên bản — đã khóa ghi dữ liệu";
+      return;
     }
-  }catch(err){state.connectionFailures++;state.pollDelayMs=Math.min(60000,15000*Math.pow(2,Math.min(2,state.connectionFailures)));setConnectionStatus("offline",(err&&err.name==="AbortError"?"Heartbeat quá 8 giây":"Mất kết nối")+" — thử lại sau "+Math.round(state.pollDelayMs/1000)+" giây");}
-  finally{state.polling=false;scheduleDashPoll_();}
+    state.connectionFailures = 0; state.pollDelayMs = 15000; setConnectionStatus("online");
+    const events = Array.isArray(j.events) ? j.events : [];
+    state.lastDashPollSeq = Math.max(sinceSeq, Number(j.latestSeq || 0));
+    events.filter(e => {
+      if(!e) return false;
+      const t = String(e.type || "").toUpperCase();
+      if(!["BAO_HONG","SUA_CHUA","BAO_DUONG","CHECKLIST_DAU_CA"].includes(t)) return false;
+      return t !== "CHECKLIST_DAU_CA" || String(e.result || "").toUpperCase() === "KHONG_DAT";
+    }).sort((a, b) => Number(a.eventSeq || 0) - Number(b.eventSeq || 0)).forEach(queueDashLiveAlert);
+    if(j.changed || Number(j.latestSeq || 0) !== sinceSeq){
+      await refreshViewSilently();
+      if(events.length){ state.dashboardNotificationsLoaded = false; scheduleDashboardNotificationsLoad_(700, true); }
+    }
+  }catch(err){
+    state.connectionFailures++;
+    state.pollDelayMs = Math.min(60000, 15000 * Math.pow(2, Math.min(2, state.connectionFailures)));
+    setConnectionStatus("offline", (err && err.name === "AbortError" ? "Heartbeat quá " + Math.round(POLL_TIMEOUT_MS / 1000) + " giây" : "Mất kết nối") + " — thử lại sau " + Math.round(state.pollDelayMs / 1000) + " giây");
+  }finally{
+    state.polling = false;
+    scheduleDashPoll_();
+  }
 }
 function scheduleDashPoll_(){
   if(state.dashTimer){clearTimeout(state.dashTimer);state.dashTimer=null;}
@@ -2336,23 +2404,42 @@ function showDefiniteFail(j,extra){
 /* ==================== ACCESS SESSION — KHÔNG LƯU MẬT KHẨU ==================== */
 configureAccessOverlay();
 state.accessToken=readAccessToken(state.accessScope);
-$("btnAccess").onclick=async()=>{
-  const v=$("accessPin").value.trim();
-  if(!v){showAccessError("Nhập mật khẩu truy cập.");return;}
-  $("accessPin").value="";$("accessErr").style.display="none";$("btnAccess").disabled=true;$("btnAccess").textContent="Đang kiểm tra…";
+$("btnAccess").onclick = async () => {
+  const v = $("accessPin").value.trim();
+  if(!v){ showAccessError("Nhập mật khẩu truy cập."); return; }
+  $("accessPin").value = ""; $("accessErr").style.display = "none";
+  $("btnAccess").disabled = true; $("btnAccess").textContent = "Đang kiểm tra…";
   try{
-    const j=await loginAccess(v);
-    if(j.status==="wrong_pin"||j.status==="locked"){showAccessError(j.status==="locked"?"Thiết bị bị khóa tạm thời. Thử lại sau "+Math.ceil((j.retryAfter||60)/60)+" phút.":"Mật khẩu truy cập không đúng.");return;}
-    if(j.status!=="ok"||!j.accessToken){showAccessError(j.message||"Không tạo được phiên đăng nhập.");return;}
-    saveAccessToken(j.accessToken,state.accessScope);$("ovAccess").classList.remove("show");await loadData();
+    const j = await loginAccess(v);
+    if(j.status === "wrong_pin" || j.status === "locked"){
+      showAccessError(j.status === "locked" ? "Thiết bị bị khóa tạm thời. Thử lại sau " + Math.ceil((j.retryAfter || 60) / 60) + " phút." : "Mật khẩu truy cập không đúng.");
+      return;
+    }
+    if(j.status !== "ok" || !j.accessToken){ showAccessError(j.message || "Không tạo được phiên đăng nhập."); return; }
+    saveAccessToken(j.accessToken, state.accessScope, j.expiresHours);
+    $("ovAccess").classList.remove("show");
+    await loadData();
   }catch(err){
-    const msg=err&&err.name==="AbortError"?"Backend phản hồi quá lâu. Thử lại sau vài giây.":(err&&err.message?err.message:"Không kết nối được backend.");
+    const msg = err && err.name === "AbortError" ? "Backend phản hồi quá lâu. Thử lại sau vài giây." : (err && err.message ? err.message : "Không kết nối được backend.");
     showAccessError(msg);
+  }finally{
+    $("btnAccess").disabled = false; $("btnAccess").textContent = "Mở hệ thống";
   }
-  finally{$("btnAccess").disabled=false;$("btnAccess").textContent="Mở hệ thống";}
 };
 $("accessPin").addEventListener("keydown",e=>{if(e.key==="Enter")$("btnAccess").click();});
-$("btnLogout").onclick=()=>{stopDashRefresh();clearAccessToken(state.accessScope);location.reload();};
+$("btnLogout").onclick = () => {
+  stopDashRefresh();
+  ["KHO","DASHBOARD"].forEach(s => {
+    try{ sessionStorage.removeItem("ktvt_access_token_" + s); }catch(_){ }
+    try{ localStorage.removeItem("ktvt_access_token_" + s + "_rec"); }catch(_){ }
+  });
+  if(XE){
+    try{ sessionStorage.removeItem("ktvt_access_token_XE_" + XE); }catch(_){ }
+    try{ localStorage.removeItem("ktvt_access_token_XE_" + XE + "_rec"); }catch(_){ }
+  }
+  state.accessToken = "";
+  location.reload();
+};
 window.addEventListener("focus",()=>{if(MODE==="dash"){startDashRefresh();pollDashboardEvents();}});
 window.addEventListener("online",()=>{setConnectionStatus("syncing","Mạng đã trở lại — đang đồng bộ…");if(MODE==="dash")pollDashboardEvents();else if(state.accessToken)loadData();});
 window.addEventListener("offline",()=>setConnectionStatus("offline","Thiết bị đang offline — giữ dữ liệu cũ"));
