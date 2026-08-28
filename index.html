@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Kỹ thuật vật tư — ICD Phúc Long — PT LIEBHEER HF10</title>
+<title>Kỹ thuật vật tư — ICD Phúc Long — STOCK CORRECTION HF11</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -214,6 +214,24 @@ body.adjusting .fbox.slipbox .fbox-head{background:var(--danger)}
 .checklist-mini.bad{border-color:var(--danger);background:#FDF3F2}.checklist-mini.bad b{color:var(--danger)}
 .checklist-mini.warn{border-color:var(--safety);background:#FFF7EB}.checklist-mini.warn b{color:var(--safety-dark)}
 .shift-filter{display:flex;gap:6px;margin:7px 0}.shift-filter button{flex:1;border:1.5px solid var(--line);border-radius:9px;background:var(--white);padding:8px;font-family:inherit;font-size:12px;font-weight:800;color:var(--muted)}.shift-filter button.on{background:var(--deep-2);color:var(--white);border-color:var(--deep-2)}
+
+
+/* Sửa phiếu kho HF11 */
+.correction-source{background:#EEF6F2;border:1.5px solid #8CB9AA;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;color:var(--deep-2)}
+.correction-line{background:var(--white);border:1.5px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:8px}
+.correction-line.changed{border-color:var(--safety);background:#FFF7EB}
+.correction-line .ctop{display:flex;justify-content:space-between;gap:9px;align-items:flex-start}
+.correction-line .cnm{font-size:13.5px;font-weight:800;color:var(--deep-2)}
+.correction-line .csub{font-size:11.5px;color:var(--muted);margin-top:2px}
+.correction-qty{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.correction-qty div{border:1px solid var(--line);border-radius:9px;padding:7px 8px;background:var(--paper);font-size:11.5px;color:var(--muted)}
+.correction-qty b{display:block;font-size:16px;color:var(--deep-2);margin-top:1px}
+.correction-qty input{width:100%;border:1.5px solid var(--safety);border-radius:9px;padding:8px;text-align:center;font-family:inherit;font-size:16px;font-weight:800;background:var(--white)}
+.correction-impact{background:#FFF7EB;border:1px solid #F1C98F;border-radius:10px;padding:9px 11px;font-size:12px;color:#7A4A08}
+.correction-impact.ok{background:#F3FAF6;border-color:#A9D4BB;color:var(--ok)}
+.correction-actions{display:flex;gap:8px}.correction-actions button{flex:1;border:1.5px solid var(--line);border-radius:10px;background:var(--white);padding:10px;font-family:inherit;font-size:12.5px;font-weight:800;color:var(--deep-2);cursor:pointer}
+.hist-correct-btn{border:1.5px solid var(--safety);border-radius:8px;background:#FFF7EB;color:var(--deep-2);font-family:inherit;font-size:11px;font-weight:800;padding:6px 9px;margin-top:7px;cursor:pointer}
+@media(max-width:380px){.correction-qty{grid-template-columns:1fr}}
 
 
 /* Bottom bar */
@@ -483,6 +501,7 @@ const READ_MODEL_HOTFIX = "2026.08.12-READ-MODEL-FIRST-HF7";
 const LOGIN_STABILITY_HOTFIX = "2026.08.13-LOGIN-STABILITY-HF8";
 const PHUOC_THUAN_HOTFIX = "2026.08.27-PHUOC-THUAN-PT-HF9";
 const PHUOC_THUAN_LIEBHEER_HOTFIX = "2026.08.28-PHUOC-THUAN-LIEBHEER-HF10"; // +4 cẩu LB-PT1..4
+const STOCK_CORRECTION_HOTFIX = "2026.08.28-STOCK-CORRECTION-HF11";
 const KEEP_TOKEN_ACROSS_TABS = true;
 const TOKEN_LOCAL_TTL_HOURS_DEFAULT = 11;
 const VIEW_TIMEOUT_XE_MS = 30000;
@@ -521,6 +540,7 @@ const NHOM_ORDER = ["MÁY XN","ĐIỆN XN","MÁY ĐK","ĐIỆN ĐK","CƠ KHÍ","
 const state = {
   data:null, tab:null, slip:{}, slipKind:null, pending:null,
   xuatCategories:{}, xuatVehicles:{}, xuatAlloc:{}, xuatOther:"",
+  correctionDraft:null, correctionLoading:false,
   accessToken:"", accessScope:INITIAL_ACCESS_SCOPE, clientId:"", versionOk:false, sending:false,
   dashTimer:null, dashSafetyTimer:null, dashAlertTimer:null, daType:"all", daDate:"", refreshing:false, polling:false,
   dashAlertQueue:[], dashAlertActive:false, lastDashAlertSeq:0, lastDashPollSeq:0,
@@ -1075,6 +1095,7 @@ async function loadData(attempt){
     document.documentElement.dataset.loginStabilityHotfix = LOGIN_STABILITY_HOTFIX;
     document.documentElement.dataset.phuocThuanHotfix = PHUOC_THUAN_HOTFIX;
     document.documentElement.dataset.phuocThuanLiebheerHotfix = PHUOC_THUAN_LIEBHEER_HOTFIX;
+    document.documentElement.dataset.stockCorrectionHotfix = STOCK_CORRECTION_HOTFIX;
     if(MODE === "dash"){
       state.dashboardNotificationsLoaded = false;
       state.dashboardNotificationsError = "";
@@ -1326,7 +1347,7 @@ function buildTabs(list){
   const t=$("tabs");t.innerHTML="";resetTabPanes();
   const preferred=state.tab&&list.some(x=>x[0]===state.tab)?state.tab:START_TAB;const initial=list.some(x=>x[0]===preferred)?preferred:list[0][0];
   list.forEach(([id,label])=>{
-    const b=document.createElement("button");b.textContent=label;b.className=id===initial?"on":"";
+    const b=document.createElement("button");b.textContent=label;b.dataset.tab=id;b.className=id===initial?"on":"";
     b.onclick=()=>{t.querySelectorAll("button").forEach(x=>x.classList.remove("on"));b.classList.add("on");openTab(id);};
     t.appendChild(b);
   });
@@ -1336,6 +1357,7 @@ function buildTabs(list){
 
 function openTab(id){
   state.tab=id;
+  if(state.correctionDraft){const correctionTab=state.correctionDraft.type==="XUAT"?"xuat":"nhap";if(id!==correctionTab)state.correctionDraft=null;}
   if(id!=="hoso")cancelXeDetailsLoad_();
   state.slip={};state.slipKind=null;state.xuatCategories={};state.xuatVehicles={};state.xuatAlloc={};state.xuatOther="";document.body.classList.remove("adjusting");$("bar").classList.remove("show");
   const fn={hoso:renderHoSo,baohong:renderBaoHong,suachua:renderSuaChua,baoduong:renderBaoDuong,checklist:renderChecklist,vavo:renderVaVo,ton:renderTon,xuat:renderXuat,nhap:renderNhap,dexuat:renderDeXuat,lichsu:renderLichSu,qc:renderQC}[id];
@@ -1688,6 +1710,8 @@ function renderSlipRows(){
   if(state.tab==="xuat")renderXuatAllocation();
 }
 function adjustRowHTML(){
+  return '<div style="display:none"><input type="checkbox" id="adjChk"><div id="adjRefRow"><input type="text" id="adjRefTxn"></div></div>'
+    +'<div class="frow"><div class="hint"><b>Sửa phiếu đã gửi:</b> mở tab Lịch sử và bấm “Sửa phiếu”. Hệ thống tự lấy giao dịch gốc và tự tính phần chênh lệch; không nhập mã giao dịch thủ công.</div></div>';
   return '<label class="frow adjust-row" for="adjChk" style="cursor:pointer;user-select:none">'
     +'<input type="checkbox" id="adjChk"><div><div class="lbl">Phiếu điều chỉnh (đảo giao dịch đã gửi sai)</div>'
     +'<div class="sub">Hệ thống tự đổi số lượng sang ÂM. Bắt buộc nhập Mã giao dịch gốc và ghi rõ lý do.</div></div></label>'
@@ -1728,6 +1752,72 @@ function validateSlipSign(list, isAdjustment){
 
 
 /* ==================== SỬA CHỮA (PIN_SUACHUA, KHÔNG TÁC ĐỘNG TỒN) ==================== */
+/* ==================== STOCK CORRECTION HF11 ==================== */
+function selectKhoTabHF11_(id){
+  const tabs=document.getElementById("tabs"),btn=tabs&&tabs.querySelector('button[data-tab="'+id+'"]');
+  if(!btn){openTab(id);return;}
+  tabs.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===btn));
+  openTab(id);
+}
+async function openStockCorrectionHF11_(txnId){
+  if(MODE!=="kho"||state.correctionLoading)return;
+  state.correctionLoading=true;setConnectionStatus("syncing","Đang tải trạng thái hiệu lực của phiếu…");
+  try{
+    const j=await apiCall({type:"STOCK_CORRECTION_PREVIEW",txnId:txnId},30000);
+    if(["access_required","access_invalid","access_expired","access_forbidden"].includes(j.status)){requireRelogin(j.message);return;}
+    if(j.status!=="ok"||j.versionMismatch||j.version!==APP_VERSION)throw new Error(j.message||"Không tải được phiếu cần sửa.");
+    if(j.hotfix!==STOCK_CORRECTION_HOTFIX)throw new Error("Backend chưa chạy STOCK CORRECTION HF11.");
+    state.correctionDraft=j;setConnectionStatus("online","Đã tải phiếu "+j.rootTxnId+" để sửa");
+    selectKhoTabHF11_(j.type==="XUAT"?"xuat":"nhap");
+  }catch(err){
+    setConnectionStatus("offline","Không mở được phiếu cần sửa");
+    alert(err&&err.message?err.message:"Không mở được phiếu cần sửa.");
+  }finally{state.correctionLoading=false;}
+}
+function cancelStockCorrectionHF11_(){state.correctionDraft=null;selectKhoTabHF11_("lichsu");}
+function readStockCorrectionTargetsHF11_(showAlert){
+  const d=state.correctionDraft;if(!d||!Array.isArray(d.lines))return null;
+  const out=[];
+  for(let i=0;i<d.lines.length;i++){
+    const line=d.lines[i],el=document.getElementById("corrQty"+i),n=Number(el&&el.value);
+    if(!Number.isInteger(n)||n<0||n>999999){if(showAlert){alert("Số lượng sửa của "+line.ma+" phải là số nguyên từ 0 đến 999999.");if(el)el.focus();}return null;}
+    out.push({key:line.key||"",ma:line.ma,maXe:d.type==="XUAT"?line.maXe:"",targetQty:n,currentQty:Number(line.currentQty||0)});
+  }
+  return out;
+}
+function updateStockCorrectionImpactHF11_(){
+  const d=state.correctionDraft,box=document.getElementById("corrImpact");if(!d||!box)return;
+  const targets=readStockCorrectionTargetsHF11_(false);if(!targets){box.className="correction-impact";box.textContent="Có số lượng không hợp lệ.";return;}
+  const net={},changed=new Set();
+  targets.forEach((t,i)=>{const delta=t.targetQty-t.currentQty;if(delta!==0){changed.add(i);const stockDelta=d.type==="NHAP"?delta:-delta;net[t.ma]=(net[t.ma]||0)+stockDelta;}});
+  d.lines.forEach((_,i)=>{const el=document.getElementById("corrLine"+i);if(el)el.classList.toggle("changed",changed.has(i));});
+  const parts=Object.keys(net).filter(ma=>net[ma]!==0).map(ma=>ma+": tồn "+(net[ma]>0?"+":"")+net[ma]);
+  if(!changed.size){box.className="correction-impact ok";box.textContent="Chưa thay đổi số lượng so với trạng thái hiện tại.";return;}
+  box.className="correction-impact";box.innerHTML="<b>Tác động tồn dự kiến:</b> "+(parts.length?parts.map(esc).join(" · "):"không đổi tổng tồn; chỉ thay đổi phân bổ theo phương tiện.")+"<br><span>Backend sẽ kiểm tra lại tồn thật dưới lock trước khi ghi.</span>";
+}
+function renderStockCorrectionHF11_(type){
+  const d=state.correctionDraft;if(!d||d.type!==type){state.correctionDraft=null;return;}
+  const isX=type==="XUAT",label=isX?"XUẤT":"NHẬP";
+  const lines=(d.lines||[]).map((r,i)=>'<div class="correction-line" id="corrLine'+i+'"><div class="ctop"><div><div class="cnm">'+esc(r.ten||r.ma)+'</div><div class="csub">'+esc(r.ma)+' · '+esc(r.dvt||"")+(isX?' · Xe '+esc(r.maXe||"")+(r.hangMuc?' · '+esc(r.hangMuc):''):'')+'</div></div></div><div class="correction-qty"><div>Ban đầu<b>'+Number(r.originalQty||0)+' '+esc(r.dvt||"")+'</b></div><div>Hiện tại<b>'+Number(r.currentQty||0)+' '+esc(r.dvt||"")+'</b></div><div style="grid-column:1/-1">Sửa thành<input type="number" inputmode="numeric" min="0" max="999999" step="1" id="corrQty'+i+'" value="'+Number(r.currentQty||0)+'"></div></div></div>').join('');
+  $("main").innerHTML='<div class="warn-note">🛡️ <b>Phiếu gốc '+esc(d.rootTxnId)+'</b> không bị sửa/xóa. HF11 chỉ ghi thêm dòng chênh lệch để đạt số lượng mới; mọi lần sửa tiếp theo đều tính trên số lượng hiệu lực hiện tại.</div>'
+    +'<div class="correction-source"><b>NGUỒN: '+label+' · '+esc(d.rootTxnId)+'</b><br>Ngày gốc '+esc(d.sourceDate||"")+(d.sourceSender?' · Người gửi '+esc(d.sourceSender):'')+(d.sourceRecipient?' · Người nhận '+esc(d.sourceRecipient):'')+'<br>'+esc(d.sourceNote||"")+(Number(d.correctionCount||0)?'<br>Đã có '+Number(d.correctionCount||0)+' lần hiệu chỉnh trước.':'')+'</div>'
+    +'<div class="fbox"><div class="fbox-head"><span>SỬA PHIẾU '+label+' KHO</span><span class="badge">HF11</span></div><div class="frow"><label>Số lượng đích</label><div class="hint">Nhập số lượng đúng mà phiếu này phải có. Có thể tăng, giảm hoặc về 0.</div>'+lines+'</div>'
+    +'<div class="frow"><label>Người sửa</label><input type="text" id="corrNguoi" value="Vân"></div><div class="frow"><label>Ngày hiệu chỉnh</label><input type="date" id="corrNgay" required value="'+todayISO()+'"></div><div class="frow"><label>Lý do sửa <span style="color:var(--danger)">*</span></label><textarea id="corrNote" placeholder="Ghi rõ nội dung nhập/xuất sai và lý do sửa"></textarea></div><div class="frow"><div class="correction-impact ok" id="corrImpact">Chưa thay đổi số lượng so với trạng thái hiện tại.</div></div><div class="frow correction-actions"><button type="button" id="corrCancel">Hủy sửa</button></div></div>';
+  d.lines.forEach((_,i)=>{const el=document.getElementById("corrQty"+i);if(el)el.addEventListener("input",updateStockCorrectionImpactHF11_);});
+  document.getElementById("corrCancel").onclick=cancelStockCorrectionHF11_;
+  $("bar").classList.add("show");$("barSum").innerHTML='<b>Sửa '+d.lines.length+' dòng · phiếu gốc giữ nguyên</b>';
+  const btn=$("btnSend");btn.textContent="Ghi sửa phiếu";btn.disabled=false;updateStockCorrectionImpactHF11_();
+  btn.onclick=()=>{
+    const targets=readStockCorrectionTargetsHF11_(true);if(!targets)return;
+    const changed=targets.filter(t=>t.targetQty!==t.currentQty);if(!changed.length){alert("Chưa có thay đổi số lượng.");return;}
+    const nguoi=$("corrNguoi").value.trim(),note=$("corrNote").value.trim(),ngay=requireDateVN("corrNgay");if(!ngay)return;
+    if(!nguoi){alert("Ghi tên người sửa phiếu.");$("corrNguoi").focus();return;}if(!note){alert("Sửa phiếu bắt buộc ghi rõ lý do.");$("corrNote").focus();return;}
+    const summary=changed.map(t=>{const line=d.lines.find(r=>r.ma===t.ma&&(type!=="XUAT"||r.maXe===t.maXe));return '• '+esc(line?line.ten:t.ma)+(type==="XUAT"?' · '+esc(t.maXe):'')+': <b>'+t.currentQty+' → '+t.targetQty+' '+esc(line&&line.dvt||"")+'</b>';}).join('<br>');
+    openConfirm({title:"Xác nhận SỬA PHIẾU "+label+" — "+d.rootTxnId,summary:summary+'<br><br>Lý do: '+esc(note)+'<br><b>Phiếu gốc không bị sửa/xóa.</b>',needPin:"VAN",payload:{type:type,isAdjustment:true,correctionMode:"TARGET_HF11",refTxnId:d.rootTxnId,correctionBaseHash:d.stateHash,correctionTargets:targets.map(t=>({key:t.key||"",ma:t.ma,maXe:type==="XUAT"?t.maXe:"",targetQty:t.targetQty})),nguoi:nguoi,note:note,date:ngay},doneMsg:j=>"Đã ghi hiệu chỉnh "+(j.phieuId||j.txnId||"")+" cho phiếu gốc "+(j.refTxnId||d.rootTxnId)+". Đã đổi "+Number(j.changedLines||changed.length)+" dòng.",after:()=>{state.correctionDraft=null;loadData();}});
+  };
+}
+
+
 function renderSuaChua(){
   const open = state.data.openBH.filter(o=>o.maXe===XE);
   let bhOpts = '<option value="">Không tham chiếu</option>'
@@ -2063,6 +2153,7 @@ function collectXuatAllocations(list,isAdjustment){
   return {vehicles:vehicleKeys.map(xuatVehiclePayload),allocations:out,categories:cats};
 }
 function renderXuat(){
+  if(state.correctionDraft&&state.correctionDraft.type==="XUAT"){renderStockCorrectionHF11_("XUAT");return;}
   const dl = '<datalist id="dlNhan">' + TO_TRUONG.map(t=>'<option value="'+esc(t.split(" (")[0])+'">').join("") + '</datalist>';
   $("main").innerHTML =
     slipSearchHTML("xk")
@@ -2112,7 +2203,7 @@ function renderXuat(){
 let lsType = "all";
 function renderLichSu(){
   $("main").innerHTML =
-    '<div class="warn-note">⚠️ Mỗi phiếu có Mã giao dịch riêng. Khi điều chỉnh phải tham chiếu đúng mã giao dịch gốc.</div>'
+    '<div class="warn-note">🛡️ Phiếu gốc không bị sửa/xóa. Muốn sửa phiếu XUẤT/NHẬP, bấm “Sửa phiếu”; hệ thống tự lấy giao dịch gốc, số lượng hiệu lực hiện tại và chỉ ghi phần chênh lệch.</div>'
    +'<div class="chips" id="lsChips"><button data-t="all" class="'+(lsType==="all"?"on":"")+'">Tất cả</button><button data-t="x" class="'+(lsType==="x"?"on":"")+'">Xuất</button><button data-t="n" class="'+(lsType==="n"?"on":"")+'">Nhập</button><button data-t="d" class="'+(lsType==="d"?"on":"")+'">Đề xuất</button></div>'
    +'<div class="search-box" style="display:flex;gap:8px"><input type="date" id="lsDate" style="flex:1"><button id="lsDateAll" class="send" style="padding:10px 14px;font-size:13px">Mọi ngày</button></div>'
    +'<div class="hint">Không lọc ngày: 50 dòng gần nhất.</div><div id="lsList"></div>';
@@ -2120,6 +2211,23 @@ function renderLichSu(){
   $("lsDate").addEventListener("change",renderLsList);$("lsDateAll").onclick=()=>{$("lsDate").value="";renderLsList();};renderLsList();
 }
 function renderLsList(){
+  {
+    let histHF11=(state.cache.khoHistorySorted||[]);
+    if(lsType!=="all")histHF11=histHF11.filter(h=>h.t===lsType);
+    const dfHF11=$("lsDate").value;if(dfHF11)histHF11=histHF11.filter(h=>h.ngay===isoToVN(dfHF11));else histHF11=histHF11.slice(0,50);
+    const boxHF11=$("lsList");
+    if(!histHF11.length){boxHF11.innerHTML='<div class="empty-note">Không có phiếu nào khớp bộ lọc.</div>';return;}
+    const rootsHF11=new Set();
+    boxHF11.innerHTML=histHF11.map(h=>{
+      const tagHF11=h.t==="x"?'<span class="hist-tag d" style="background:#FDE8E6;color:var(--danger)">XUẤT</span>':(h.t==="n"?'<span class="hist-tag n">NHẬP</span>':'<span class="hist-tag d">ĐỀ XUẤT</span>');
+      const rootHF11=h.refTxnId||h.txnId||"";
+      const canFixHF11=(h.t==="x"||h.t==="n")&&rootHF11&&!rootsHF11.has(rootHF11);if(canFixHF11)rootsHF11.add(rootHF11);
+      const actionHF11=canFixHF11?'<button type="button" class="hist-correct-btn" data-correct-txn="'+esc(rootHF11)+'">✏️ Sửa phiếu</button>':'';
+      return '<div class="hist-row'+(h.sl<0?' neg':'')+'"><div class="top"><span>'+tagHF11+esc(h.vt)+'</span><b>'+h.sl+' '+esc(h.dvt||"")+'</b></div><div class="sub">Ngày '+esc(h.ngay)+' · '+esc(h.nguoi||"")+(h.sub?' · '+esc(h.sub):'')+'<br><b>Mã giao dịch: '+esc(h.txnId||"")+'</b>'+(h.refTxnId?' · hiệu chỉnh của '+esc(h.refTxnId):'')+'</div>'+actionHF11+'</div>';
+    }).join("");
+    boxHF11.querySelectorAll("[data-correct-txn]").forEach(b=>{b.onclick=()=>openStockCorrectionHF11_(b.dataset.correctTxn);});
+    return;
+  }
   let hist=(state.cache.khoHistorySorted||[]);
   if(lsType!=="all")hist=hist.filter(h=>h.t===lsType);
   const df=$("lsDate").value;if(df)hist=hist.filter(h=>h.ngay===isoToVN(df));else hist=hist.slice(0,50);
@@ -2332,6 +2440,7 @@ function updateNhapNewMaterialPreview(){
 
 /* ==================== NHẬP KHO (PIN_VAN) ==================== */
 function renderNhap(){
+  if(state.correctionDraft&&state.correctionDraft.type==="NHAP"){renderStockCorrectionHF11_("NHAP");return;}
   const groupOptions = nhapMaterialGroupList().map(x=>'<option value="'+esc(x)+'"></option>').join("");
   $("main").innerHTML =
     slipSearchHTML("nh")
