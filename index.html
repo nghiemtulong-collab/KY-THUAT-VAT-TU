@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Kỹ thuật vật tư — ICD Phúc Long — STOCK CORRECTION HF11</title>
+<title>Kỹ thuật vật tư — ICD Phúc Long — NEW MATERIAL PROPOSAL HF12</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -53,6 +53,12 @@ header{background:var(--deep);color:var(--white);padding:14px;position:sticky;to
 .new-material-grid input:focus{outline:none;border-color:var(--safety)}
 .new-material-preview{grid-column:1/-1;background:#FFF7EB;border:1px solid #F1C98F;border-radius:9px;padding:8px 10px;font-size:12px;color:#7A4A08}
 .new-material-preview b{color:var(--deep-2)}
+.dx-new-add{grid-column:1/-1;border:0;border-radius:10px;background:var(--deep-2);color:var(--white);font-family:inherit;font-size:13px;font-weight:800;padding:11px 12px;cursor:pointer}
+.dx-new-list{grid-column:1/-1;display:flex;flex-direction:column;gap:7px;margin-top:2px}
+.dx-new-row{display:flex;align-items:flex-start;gap:8px;border:1px solid #B9D3C9;border-radius:10px;background:var(--white);padding:9px 10px}
+.dx-new-row .info{flex:1;min-width:0}.dx-new-row .nm{font-size:13px;font-weight:800;color:var(--deep-2)}.dx-new-row .sub{font-size:11.5px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+.dx-new-row .rm{border:0;background:transparent;color:var(--danger);font-size:18px;cursor:pointer;padding:2px 4px}
+.dx-new-empty{grid-column:1/-1;border:1px dashed #B9D3C9;border-radius:9px;padding:9px 10px;color:var(--muted);font-size:12px;text-align:center;background:var(--white)}
 @media(max-width:420px){.new-material-grid{grid-template-columns:1fr}.new-material-grid .full{grid-column:1}}
 
 
@@ -502,6 +508,7 @@ const LOGIN_STABILITY_HOTFIX = "2026.08.13-LOGIN-STABILITY-HF8";
 const PHUOC_THUAN_HOTFIX = "2026.08.27-PHUOC-THUAN-PT-HF9";
 const PHUOC_THUAN_LIEBHEER_HOTFIX = "2026.08.28-PHUOC-THUAN-LIEBHEER-HF10"; // +4 cẩu LB-PT1..4
 const STOCK_CORRECTION_HOTFIX = "2026.08.28-STOCK-CORRECTION-HF11";
+const NEW_MATERIAL_PROPOSAL_HOTFIX = "2026.09.09-NEW-MATERIAL-PROPOSAL-HF12";
 const KEEP_TOKEN_ACROSS_TABS = true;
 const TOKEN_LOCAL_TTL_HOURS_DEFAULT = 11;
 const VIEW_TIMEOUT_XE_MS = 30000;
@@ -540,6 +547,7 @@ const NHOM_ORDER = ["MÁY XN","ĐIỆN XN","MÁY ĐK","ĐIỆN ĐK","CƠ KHÍ","
 const state = {
   data:null, tab:null, slip:{}, slipKind:null, pending:null,
   xuatCategories:{}, xuatVehicles:{}, xuatAlloc:{}, xuatOther:"",
+  dxNewItems:[],
   correctionDraft:null, correctionLoading:false,
   accessToken:"", accessScope:INITIAL_ACCESS_SCOPE, clientId:"", versionOk:false, sending:false,
   dashTimer:null, dashSafetyTimer:null, dashAlertTimer:null, daType:"all", daDate:"", refreshing:false, polling:false,
@@ -1096,6 +1104,7 @@ async function loadData(attempt){
     document.documentElement.dataset.phuocThuanHotfix = PHUOC_THUAN_HOTFIX;
     document.documentElement.dataset.phuocThuanLiebheerHotfix = PHUOC_THUAN_LIEBHEER_HOTFIX;
     document.documentElement.dataset.stockCorrectionHotfix = STOCK_CORRECTION_HOTFIX;
+    document.documentElement.dataset.newMaterialProposalHotfix = NEW_MATERIAL_PROPOSAL_HOTFIX;
     if(MODE === "dash"){
       state.dashboardNotificationsLoaded = false;
       state.dashboardNotificationsError = "";
@@ -1359,7 +1368,7 @@ function openTab(id){
   state.tab=id;
   if(state.correctionDraft){const correctionTab=state.correctionDraft.type==="XUAT"?"xuat":"nhap";if(id!==correctionTab)state.correctionDraft=null;}
   if(id!=="hoso")cancelXeDetailsLoad_();
-  state.slip={};state.slipKind=null;state.xuatCategories={};state.xuatVehicles={};state.xuatAlloc={};state.xuatOther="";document.body.classList.remove("adjusting");$("bar").classList.remove("show");
+  state.slip={};state.slipKind=null;state.xuatCategories={};state.xuatVehicles={};state.xuatAlloc={};state.xuatOther="";state.dxNewItems=[];document.body.classList.remove("adjusting");$("bar").classList.remove("show");
   const fn={hoso:renderHoSo,baohong:renderBaoHong,suachua:renderSuaChua,baoduong:renderBaoDuong,checklist:renderChecklist,vavo:renderVaVo,ton:renderTon,xuat:renderXuat,nhap:renderNhap,dexuat:renderDeXuat,lichsu:renderLichSu,qc:renderQC}[id];
   if(!fn) return;
 
@@ -1680,14 +1689,19 @@ function setQty(ma, v){
 function renderSlipRows(){
   const rows = $("slipRows"); if(!rows) return;
   const list = Object.values(state.slip);
-  $("slipCount").textContent = list.length + " mã";
+  const dxNew = state.tab === "dexuat" && Array.isArray(state.dxNewItems) ? state.dxNewItems : [];
+  const totalDx = list.length + dxNew.length;
+  $("slipCount").textContent = state.tab === "dexuat" ? totalDx + " dòng" : list.length + " mã";
   $("barSum").innerHTML = state.tab === "suachua" && list.length === 0
     ? "<b>Không dùng vật tư</b>"
-    : "<b>"+list.length+"</b> mã vật tư";
+    : (state.tab === "dexuat"
+      ? "<b>"+totalDx+"</b> dòng · "+list.length+" có mã · "+dxNew.length+" mới"
+      : "<b>"+list.length+"</b> mã vật tư");
   const allowNoMaterialRepair = state.tab === "suachua" && !isAdjustmentOn();
   const allowNhapNewMaterial = state.tab === "nhap" && $("nhNewChk") && $("nhNewChk").checked;
-  $("btnSend").disabled = list.length === 0 && !allowNoMaterialRepair && !allowNhapNewMaterial;
-  if(!list.length){ rows.innerHTML = '<div class="slip-empty">Chưa có vật tư nào. Tìm và bấm chọn ở trên.</div>'; if(state.tab==="xuat")renderXuatAllocation(); return; }
+  const allowDxNewMaterial = state.tab === "dexuat" && dxNew.length > 0;
+  $("btnSend").disabled = list.length === 0 && !allowNoMaterialRepair && !allowNhapNewMaterial && !allowDxNewMaterial;
+  if(!list.length){ rows.innerHTML = '<div class="slip-empty">Chưa có vật tư có mã nào. Tìm và bấm chọn ở trên.</div>'; if(state.tab==="xuat")renderXuatAllocation(); return; }
   rows.innerHTML = "";
   list.forEach(r=>{
     const d = document.createElement("div");
@@ -2532,38 +2546,99 @@ function renderNhap(){
 
 
 /* ==================== ĐỀ XUẤT (PIN_DEXUAT) ==================== */
+function dxNewIdentityKey_(ten,dvt){
+  return stripAccent(String(ten||"").replace(/\s+/g," ").trim())+"||"+stripAccent(String(dvt||"").replace(/\s+/g," ").trim());
+}
+function collectDxNewItem_(showAlert){
+  const ten=String($("dxNewTen")&&$("dxNewTen").value||"").trim().replace(/\s+/g," ");
+  const quyCach=String($("dxNewSpec")&&$("dxNewSpec").value||"").trim().replace(/\s+/g," ");
+  const dvt=String($("dxNewDvt")&&$("dxNewDvt").value||"").trim().replace(/\s+/g," ");
+  const qty=Number($("dxNewQty")&&$("dxNewQty").value);
+  function fail(msg,id){if(showAlert){alert(msg);const el=$(id);if(el)el.focus();}return null;}
+  if(ten.length<3)return fail("Tên vật tư mới phải có ít nhất 3 ký tự.","dxNewTen");
+  if(ten.length>200)return fail("Tên vật tư mới tối đa 200 ký tự.","dxNewTen");
+  if(!dvt)return fail("Ghi đơn vị tính của vật tư mới.","dxNewDvt");
+  if(dvt.length>40)return fail("Đơn vị tính tối đa 40 ký tự.","dxNewDvt");
+  if(quyCach.length>500)return fail("Quy cách/thông số tối đa 500 ký tự.","dxNewSpec");
+  if(!Number.isInteger(qty)||qty<=0||qty>999999)return fail("Số lượng vật tư mới phải là số nguyên dương, tối đa 999999.","dxNewQty");
+  const key=dxNewIdentityKey_(ten,dvt);
+  const existing=(state.data.stock||[]).find(r=>dxNewIdentityKey_(r.ten,r.dvt)===key);
+  if(existing)return fail("Vật tư này đã có mã "+existing.ma+" trong danh mục. Hãy tìm và chọn mã có sẵn ở ô tìm kiếm.","dxNewTen");
+  if((state.dxNewItems||[]).some(r=>dxNewIdentityKey_(r.ten,r.dvt)===key))return fail("Vật tư mới này đã có trong phiếu đề xuất.","dxNewTen");
+  return {id:randomId("dxnew"),ten:ten,quyCach:quyCach,dvt:dvt,qty:qty};
+}
+function renderDxNewItems_(){
+  const box=$("dxNewList");if(!box)return;
+  const list=Array.isArray(state.dxNewItems)?state.dxNewItems:[];
+  box.innerHTML=list.length?list.map(r=>'<div class="dx-new-row"><div class="info"><div class="nm">[MỚI] '+esc(r.ten)+'</div><div class="sub">'+(r.quyCach?'Quy cách: '+esc(r.quyCach)+' · ':'')+'<b>'+r.qty+' '+esc(r.dvt)+'</b> · chưa tạo mã vật tư</div></div><button type="button" class="rm" data-dxnew-rm="'+esc(r.id)+'" aria-label="Xóa">✕</button></div>').join(''):'<div class="dx-new-empty">Chưa có vật tư mới nào trong phiếu.</div>';
+  box.querySelectorAll('[data-dxnew-rm]').forEach(btn=>btn.onclick=()=>{state.dxNewItems=state.dxNewItems.filter(r=>r.id!==btn.dataset.dxnewRm);renderDxNewItems_();renderSlipRows();});
+}
+function updateDxNewPanel_(){
+  const panel=$("dxNewPanel"),on=$("dxNewChk")&&$("dxNewChk").checked;
+  if(panel)panel.classList.toggle("show",!!on);
+}
 function renderDeXuat(){
   let opts = '<option value="">— Chọn người đề xuất —</option>' + TO_TRUONG.map(t=>'<option>'+esc(t)+'</option>').join("") + '<option value="__khac">Khác (gõ tên)</option>';
+  const hf12Ready=state.data&&state.data.newMaterialProposalHotfix===NEW_MATERIAL_PROPOSAL_HOTFIX;
   $("main").innerHTML =
     slipSearchHTML("dx")
    + slipBoxHTML("PHIẾU ĐỀ XUẤT VẬT TƯ")
+   +'<label class="new-material-toggle" for="dxNewChk" style="'+(hf12Ready?'':'opacity:.6')+'">'
+   +'<input type="checkbox" id="dxNewChk" '+(hf12Ready?'':'disabled')+'><div><div class="lbl">Đề xuất vật tư mới — chưa có trong DANH_MUC_VT</div>'
+   +'<div class="sub">Chỉ ghi vào phiếu đề xuất; chưa tạo mã, chưa cộng tồn. Khi hàng thực tế về, Vân dùng Nhập → Vật tư mới.</div></div></label>'
+   +(hf12Ready?'':'<div class="warn-note">⚠ Backend chưa có '+esc(NEW_MATERIAL_PROPOSAL_HOTFIX)+'. Vật tư có mã vẫn đề xuất bình thường; deploy backend HF12 trước để dùng Vật tư mới.</div>')
+   +'<div class="new-material-panel" id="dxNewPanel"><div class="new-material-head">VẬT TƯ MỚI CẦN ĐỀ XUẤT</div>'
+   +'<div class="new-material-grid">'
+   +'<div class="full"><label>Tên vật tư *</label><input type="text" id="dxNewTen" maxlength="200" placeholder="Vd: Cảm biến áp suất"></div>'
+   +'<div class="full"><label>Quy cách / thông số</label><input type="text" id="dxNewSpec" maxlength="500" placeholder="Vd: 0–250 bar, ren 1/4 inch"></div>'
+   +'<div><label>Đơn vị tính *</label><input type="text" id="dxNewDvt" list="dxNewDvtList" maxlength="40" placeholder="Cái, Bộ, Lít…"><datalist id="dxNewDvtList"><option>Cái</option><option>Bộ</option><option>Bình</option><option>Chai</option><option>Kg</option><option>Lít</option><option>Mét</option><option>Cuộn</option><option>Tấm</option><option>Cây</option><option>Hộp</option></datalist></div>'
+   +'<div><label>Số lượng *</label><input type="number" id="dxNewQty" min="1" max="999999" step="1" inputmode="numeric" value="1"></div>'
+   +'<button type="button" class="dx-new-add" id="dxAddNew">＋ Thêm vào phiếu đề xuất</button>'
+   +'<div class="dx-new-list" id="dxNewList"></div>'
+   +'</div></div>'
    +'<div class="frow"><label>Người đề xuất</label><select id="dxNguoi">'+opts+'</select>'
    +'<input type="text" id="dxNguoiKhac" placeholder="Gõ tên" style="display:none;margin-top:7px"></div>'
    +'<div class="frow"><label>V/v — lý do đề xuất (nên ghi rõ)</label><input type="text" id="dxNote" placeholder="Vd: bổ sung vật tư sửa NB05"></div>'
    +'<div class="frow"><label>Ngày</label><input type="date" id="dxNgay" required value="'+todayISO()+'"></div>'
-   +'<div class="frow"><div class="hint" style="margin:0">Đề xuất là xin cấp — <b>không cộng vào tồn kho</b>. Phiếu in vẫn ký duyệt giấy như quy trình.</div></div>'
+   +'<div class="frow"><div class="hint" style="margin:0">Đề xuất là xin cấp — <b>không cộng vào tồn kho</b>. Vật tư mới chỉ được tạo mã khi hàng thực tế về.</div></div>'
    +'</div>';
   bindSlipSearch("dx");
   $("dxNguoi").onchange = ()=>{ $("dxNguoiKhac").style.display = $("dxNguoi").value==="__khac" ? "block" : "none"; };
+  if(hf12Ready){
+    $("dxNewChk").onchange=()=>{if(!$("dxNewChk").checked&&state.dxNewItems.length){$("dxNewChk").checked=true;alert("Phiếu đang có vật tư mới. Xóa các dòng vật tư mới trước khi đóng mục này.");return;}updateDxNewPanel_();if($("dxNewChk").checked)setTimeout(()=>$("dxNewTen").focus(),0);};
+    $("dxAddNew").onclick=()=>{
+      const item=collectDxNewItem_(true);if(!item)return;
+      if(Object.keys(state.slip).length+state.dxNewItems.length>=100){alert("Một phiếu tối đa 100 dòng vật tư.");return;}
+      state.dxNewItems.push(item);
+      $("dxNewTen").value="";$("dxNewSpec").value="";$("dxNewQty").value="1";
+      renderDxNewItems_();renderSlipRows();$("dxNewTen").focus();
+    };
+  }
+  updateDxNewPanel_();renderDxNewItems_();
   $("bar").classList.add("show");
   const btn = $("btnSend");
   btn.textContent = "Gửi đề xuất"; btn.disabled = true;
   renderSlipRows();
   btn.onclick = ()=>{
-    const list = Object.values(state.slip);
-    if(!list.length) return;
+    const list = Object.values(state.slip),newItems=Array.isArray(state.dxNewItems)?state.dxNewItems:[];
+    if(!list.length&&!newItems.length) return;
+    if(list.length+newItems.length>100){alert("Một phiếu tối đa 100 dòng vật tư.");return;}
     if(!validateSlipSign(list, false)) return;
+    if(newItems.length&&!hf12Ready){alert("Backend chưa chạy NEW MATERIAL PROPOSAL HF12. Chưa gửi phiếu.");return;}
     let nguoi = $("dxNguoi").value === "__khac" ? $("dxNguoiKhac").value.trim() : $("dxNguoi").value;
     if(!nguoi){ alert("Chọn người đề xuất."); return; }
     const ngay = requireDateVN("dxNgay"); if(!ngay) return;
+    const summaryRows=list.map(r=>"• "+esc(r.ten)+" — <b>"+r.qty+" "+esc(r.dvt)+"</b>")
+      .concat(newItems.map(r=>'• <b>[VẬT TƯ MỚI]</b> '+esc(r.ten)+' — <b>'+r.qty+' '+esc(r.dvt)+'</b>'+(r.quyCach?'<br><span style="font-size:12px">Quy cách: '+esc(r.quyCach)+'</span>':'')));
     openConfirm({
       title: "Xác nhận PHIẾU ĐỀ XUẤT",
-      summary: "Người đề xuất: <b>"+esc(nguoi)+"</b><br>" + list.map(r=>"• "+esc(r.ten)+" — <b>"+r.qty+" "+esc(r.dvt)+"</b>").join("<br>"),
+      summary: "Người đề xuất: <b>"+esc(nguoi)+"</b><br>" + summaryRows.join("<br>"),
       needPin: "DX",
       payload: { type:"DE_XUAT", nguoi:nguoi, note:$("dxNote").value.trim(), date:ngay,
-                 items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})) },
-      doneMsg: j => "Đã ghi đề xuất "+(j.dxId||j.txnId||"")+"." + (j.warn ? " " + j.warn : ""),
-      after: ()=>{ loadData(); }
+                 items:list.map(r=>({ma:r.ma,ten:r.ten,dvt:r.dvt,qty:r.qty})),
+                 newItems:newItems.map(r=>({ten:r.ten,quyCach:r.quyCach,dvt:r.dvt,qty:r.qty})) },
+      doneMsg: j => "Đã ghi đề xuất "+(j.dxId||j.txnId||"")+" với "+(list.length+newItems.length)+" dòng"+(newItems.length?", gồm "+newItems.length+" vật tư mới chưa có mã":"")+"." + (j.warn ? " " + j.warn : ""),
+      after: ()=>{ state.dxNewItems=[]; loadData(); }
     });
   };
 }
