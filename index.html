@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Kỹ thuật vật tư — ICD Phúc Long — NEW MATERIAL PROPOSAL HF12</title>
+<title>Kỹ thuật vật tư — ICD Phúc Long — NẰM BÃI HF13</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -509,6 +509,7 @@ const PHUOC_THUAN_HOTFIX = "2026.08.27-PHUOC-THUAN-PT-HF9";
 const PHUOC_THUAN_LIEBHEER_HOTFIX = "2026.08.28-PHUOC-THUAN-LIEBHEER-HF10"; // +4 cẩu LB-PT1..4
 const STOCK_CORRECTION_HOTFIX = "2026.08.28-STOCK-CORRECTION-HF11";
 const NEW_MATERIAL_PROPOSAL_HOTFIX = "2026.09.09-NEW-MATERIAL-PROPOSAL-HF12";
+const NAM_BAI_LABEL_HOTFIX = "2026.09.21-NAM-BAI-LABEL-HF13";
 const KEEP_TOKEN_ACROSS_TABS = true;
 const TOKEN_LOCAL_TTL_HOURS_DEFAULT = 11;
 const VIEW_TIMEOUT_XE_MS = 30000;
@@ -589,6 +590,22 @@ function stripAccent(s){
   return String(s).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").replace(/Đ/g,"D").toLowerCase();
 }
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+/* HF13: chỉ đổi nhãn trình bày; giữ nguyên enum/payload và transaction gốc. */
+function breakdownStatusLabelHF13_(value){
+  var raw = String(value == null ? "" : value).trim();
+  var key = raw.normalize("NFC").toLowerCase().replace(/\s+/g, " ");
+  return ["chết máy / nằm bãi", "chết máy", "chết", "nằm bãi"].indexOf(key) >= 0 ? "Nằm bãi" : raw;
+}
+
+// Chỉ thay prefix nhãn do hệ thống sinh. Không thay chữ trong mô tả của người báo.
+function breakdownNotificationLabelHF13_(value){
+  return String(value == null ? "" : value)
+    .replace(/^(\s*(?:🔴\s*)?XE\s+)CHẾT\s+MÁY(?=\s*(?:—|–|-|$))/i, "$1NẰM BÃI")
+    .replace(/^(\s*)Chết máy\s*\/\s*nằm bãi(?=\s*(?:[·|]|$))/i, "$1Nằm bãi")
+    .replace(/^(\s*)Chết máy(?=\s*(?:[·|]|$))/i, "$1Nằm bãi");
+}
+
 function todayISO(){
   const d = new Date();
   const y = d.getFullYear();
@@ -896,8 +913,8 @@ function showNextDashLiveAlert(){
   box.classList.remove("dead","repair","maintenance","checklist");
   if(type==="BAO_HONG"){
     if(dead) box.classList.add("dead");
-    title=(dead?"🔴 XE CHẾT MÁY":"🚨 BÁO HỎNG MỚI")+" — "+(event.maXe||"");
-    msg=(event.moTa||"Có báo hỏng mới.")+(event.tinhTrang?" · "+event.tinhTrang:"");
+    title=(dead?"🔴 XE NẰM BÃI":"🚨 BÁO HỎNG MỚI")+" — "+(event.maXe||"");
+    msg=(event.moTa||"Có báo hỏng mới.")+(event.tinhTrang?" · "+breakdownStatusLabelHF13_(event.tinhTrang):"");
     meta=[event.nguoi?"Người báo: "+event.nguoi:"",event.maBH||"",event.ts||""];
     duration=dead?14000:9000;
     vibration=dead?[250,120,250]:[160];
@@ -1105,6 +1122,7 @@ async function loadData(attempt){
     document.documentElement.dataset.phuocThuanLiebheerHotfix = PHUOC_THUAN_LIEBHEER_HOTFIX;
     document.documentElement.dataset.stockCorrectionHotfix = STOCK_CORRECTION_HOTFIX;
     document.documentElement.dataset.newMaterialProposalHotfix = NEW_MATERIAL_PROPOSAL_HOTFIX;
+    document.documentElement.dataset.namBaiLabelHotfix = NAM_BAI_LABEL_HOTFIX;
     if(MODE === "dash"){
       state.dashboardNotificationsLoaded = false;
       state.dashboardNotificationsError = "";
@@ -1232,11 +1250,14 @@ function notificationTypeLabel(type){
 }
 function notificationUrgent(n){const t=String(n.type||"").toUpperCase();return (t==="BAO_HONG"&&/chết/i.test((n.title||"")+" "+(n.summary||"")))||t==="CHECKLIST_DAU_CA";}
 function notificationRowHTML(n, compact=false){
+  const isBreakdownHF13 = String(n.type||"").toUpperCase() === "BAO_HONG";
+  const titleHF13 = isBreakdownHF13 ? breakdownNotificationLabelHF13_(n.title) : (n.title||"");
+  const summaryHF13 = isBreakdownHF13 ? breakdownNotificationLabelHF13_(n.summary) : (n.summary||"");
   const directTab=String(n.type||"").toUpperCase()==="CHECKLIST_DAU_CA"?"&tab=baohong":"";
   const link=n.maXe?(location.origin+location.pathname+'?xe='+encodeURIComponent(n.maXe)+directTab):"";
   return '<div class="notif-row'+(notificationUrgent(n)?' urgent':'')+'" data-notif-row="'+esc(n.notificationId)+'">'
     +'<div class="nt">'+notificationTypeLabel(n.type)+(n.maXe?' — '+esc(n.maXe):'')+'</div>'
-    +'<div class="ns">'+esc(n.title||"")+(n.summary?' · '+esc(n.summary):'')+'</div>'
+    +'<div class="ns">'+esc(titleHF13)+(summaryHF13?' · '+esc(summaryHF13):'')+'</div>'
     +'<div class="nm">'+esc(n.ngay||"")+(n.sender?' · '+esc(n.sender):'')+(n.ts?' · '+esc(n.ts):'')+(n.txnId?' · '+esc(n.txnId):'')+'</div>'
     +'<div class="notif-actions">'
     +(link?'<a href="'+link+'">Mở hồ sơ xe</a>':'')
@@ -1451,7 +1472,7 @@ function renderHoSo(){
   if(open.length){
     html += '<div class="sec-t">SỰ CỐ ĐANG MỞ <span class="tag open">' + open.length + '</span></div>';
     open.forEach(o=>{
-      html += '<div class="hist-row neg"><div class="top"><span><span class="hist-tag bh">MỞ</span>' + esc(o.tinhTrang||"") + '</span><b>' + esc(o.maBH) + '</b></div>'
+      html += '<div class="hist-row neg"><div class="top"><span><span class="hist-tag bh">MỞ</span>' + esc(breakdownStatusLabelHF13_(o.tinhTrang)) + '</span><b>' + esc(o.maBH) + '</b></div>'
             + '<div class="sub">Ngày ' + esc(o.ngay) + ' · ' + esc(o.nguoi) + ' · ' + esc(o.moTa) + ' · Txn '+esc(o.txnId||"")+'</div></div>';
     });
   }
@@ -1493,7 +1514,7 @@ function renderHoSo(){
 
 
   const ev = [];
-  d.history.BAO_HONG.filter(r=>r.maXe===XE).forEach(r=>ev.push({t:"bh",ts:r.ts,ngay:r.ngay,top:esc(r.tinhTrang||"Báo hỏng"),val:esc(r.maBH),sub:"Ngày "+esc(r.ngay)+" · "+esc(r.nguoi)+" · "+esc(r.moTa)+" · "+esc(r.txnId||"")}));
+  d.history.BAO_HONG.filter(r=>r.maXe===XE).forEach(r=>ev.push({t:"bh",ts:r.ts,ngay:r.ngay,top:esc(breakdownStatusLabelHF13_(r.tinhTrang||"Báo hỏng")),val:esc(r.maBH),sub:"Ngày "+esc(r.ngay)+" · "+esc(r.nguoi)+" · "+esc(r.moTa)+" · "+esc(r.txnId||"")}));
   d.history.XUAT.filter(r=>r.maXe===XE).forEach(r=>ev.push({t:"x",ts:r.ts,ngay:r.ngay,top:esc(r.vt),val:r.sl+" "+esc(r.dvt),sub:"Ngày "+esc(r.ngay)+" · "+esc(r.nguoi)+(r.nguoiNhan?" · nhận "+esc(r.nguoiNhan):"")+(r.ghichu?" · "+esc(r.ghichu):"")+" · "+esc(r.txnId||""),neg:r.sl<0}));
   d.history.SUA_CHUA.filter(r=>r.maXe===XE).forEach(r=>ev.push({t:"sc",ts:r.ts,ngay:r.ngay,top:"Xác nhận sửa chữa",val:repairStatusText(r.status),sub:"Ngày "+esc(r.ngay)+" · "+esc(r.nguoi)+(r.maBH?" · sự cố "+esc(r.maBH):"")+" · "+esc(r.ghichu)+" · "+esc(r.repairId||r.txnId||""),neg:r.status==="QC_REJECTED"}));
   (d.history.QC||[]).filter(r=>r.maXe===XE).forEach(r=>ev.push({t:"qc",ts:r.ts,ngay:r.ngay,top:"QC "+(r.ketQua==="APPROVE"?"ĐẠT":"KHÔNG ĐẠT"),val:esc(r.qcId||""),sub:"Ngày "+esc(r.ngay)+" · "+esc(r.nguoiQC)+" · "+esc(r.ghiChu)+(r.evidenceUrl?" · Có link minh chứng":""),neg:r.ketQua!=="APPROVE"}));
@@ -1578,13 +1599,14 @@ function renderBaoHong(){
    +'<div class="frow"><label>Người báo</label><select id="bhNguoi">'+opts+'</select>'
    +'<input type="text" id="bhNguoiKhac" placeholder="Gõ tên người báo" style="display:none;margin-top:7px"></div>'
    +'<div class="frow"><label>Tình trạng phương tiện</label><div class="seg2">'
-   +'<button id="bhTT1" class="on">Còn chạy được</button><button id="bhTT2">Chết máy / nằm bãi</button></div></div>'
+   +'<button id="bhTT1" class="on">Còn chạy được</button><button id="bhTT2">Nằm bãi</button></div></div>'
    +'<div class="frow"><label>Mô tả hư hỏng</label><textarea id="bhMoTa" placeholder="Vd: rỉ nhớt thủy lực, đứt cáp, kẹt phanh, hư đèn, kèn không kêu…"></textarea></div>'
    +'<div class="frow"><label>Ngày</label><input type="date" id="bhNgay" required value="'+todayISO()+'"></div>'
    +'</div>';
   $("bhNguoi").onchange = ()=>{ $("bhNguoiKhac").style.display = $("bhNguoi").value==="__khac" ? "block" : "none"; };
   let tt = "Còn chạy được";
   $("bhTT1").onclick = ()=>{ tt="Còn chạy được"; $("bhTT1").className="on"; $("bhTT2").className=""; };
+  // HF13 giữ enum cũ để backend HF12/HF13 và retry cùng payload tương thích.
   $("bhTT2").onclick = ()=>{ tt="Chết máy / nằm bãi"; $("bhTT2").className="on bad"; $("bhTT1").className=""; };
 
 
@@ -1600,7 +1622,7 @@ function renderBaoHong(){
     const ngay = requireDateVN("bhNgay"); if(!ngay) return;
     openConfirm({
       title: "Xác nhận BÁO HỎNG — " + XE,
-      summary: "• Người báo: <b>"+esc(nguoi)+"</b><br>• Tình trạng: <b>"+esc(tt)+"</b><br>• "+esc(moTa),
+      summary: "• Người báo: <b>"+esc(nguoi)+"</b><br>• Tình trạng: <b>"+esc(breakdownStatusLabelHF13_(tt))+"</b><br>• "+esc(moTa),
       needPin: null,
       payload: { type:"BAO_HONG", maXe:XE, nguoi:nguoi, tinhTrang:tt, moTa:moTa, date:ngay },
       doneMsg: j => "Đã ghi nhật ký báo hỏng "+(j.maBH?"("+j.maBH+")":"")+". Nhớ báo group nếu chưa báo."+(j.warn?" "+j.warn:""),
@@ -2284,7 +2306,7 @@ function renderDash(){
 
 
   const acts=[];
-  (hist.BAO_HONG||[]).forEach(r=>acts.push({t:"bh",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag bh">BÁO HỎNG</span>',top:esc(r.maXe)+" · "+esc(r.tinhTrang),sub:esc(r.nguoi)+" · "+esc(r.moTa)+" · "+esc(r.txnId||"")}));
+  (hist.BAO_HONG||[]).forEach(r=>acts.push({t:"bh",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag bh">BÁO HỎNG</span>',top:esc(r.maXe)+" · "+esc(breakdownStatusLabelHF13_(r.tinhTrang)),sub:esc(r.nguoi)+" · "+esc(r.moTa)+" · "+esc(r.txnId||"")}));
   (hist.SUA_CHUA||[]).forEach(r=>acts.push({t:"sc",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag sc">SỬA CHỮA</span>',top:esc(r.maXe)+" · "+repairStatusText(r.status),sub:esc(r.nguoi)+" · "+esc(r.ghichu)+" · "+esc(r.repairId||r.txnId||""),neg:r.status==="QC_REJECTED"}));
   (hist.QC||[]).forEach(r=>acts.push({t:"qc",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag sc">QC</span>',top:esc(r.maXe)+" · "+(r.ketQua==="APPROVE"?"ĐẠT":"KHÔNG ĐẠT"),sub:esc(r.nguoiQC)+" · "+esc(r.ghiChu)+" · "+esc(r.qcId||""),neg:r.ketQua!=="APPROVE"}));
   (hist.BAO_DUONG||[]).forEach(r=>acts.push({t:"bd",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag bd">BẢO DƯỠNG</span>',top:esc(r.maXe)+" · "+esc(r.hangMuc),sub:(r.soGio!=null?r.soGio+"h · ":"")+esc(r.nguoi)+" · "+esc(r.txnId||"")}));
@@ -2314,7 +2336,7 @@ function renderDash(){
 
   const groups={};d.xe.forEach(x=>{const g=vehicleDashboardGroupPT_(x);(groups[g]=groups[g]||[]).push(x);});
   html+='<div class="sec-t">TRẠNG THÁI PHƯƠNG TIỆN</div>';
-  Object.keys(groups).forEach(g=>{html+='<div class="dash-note" style="margin:6px 0 5px;font-weight:700">'+esc(g)+'</div><div class="fleet">';groups[g].forEach(x=>{const dead=deadXe[x.ma],warn=warnXe[x.ma],cls=dead?"dead":(warn?"warn":""),st=dead?"CHẾT "+(oldestXe[x.ma]||0)+" ngày":(warn?"Sự cố "+(oldestXe[x.ma]||0)+" ngày":"OK");html+='<a class="'+cls+'" href="'+base+'?xe='+encodeURIComponent(x.ma)+'"><div class="fc">'+esc(x.ma)+'</div><div class="fs">'+st+'</div></a>';});html+='</div>';});
+  Object.keys(groups).forEach(g=>{html+='<div class="dash-note" style="margin:6px 0 5px;font-weight:700">'+esc(g)+'</div><div class="fleet">';groups[g].forEach(x=>{const dead=deadXe[x.ma],warn=warnXe[x.ma],cls=dead?"dead":(warn?"warn":""),st=dead?"NẰM BÃI<br>"+(oldestXe[x.ma]||0)+" ngày":(warn?"Sự cố "+(oldestXe[x.ma]||0)+" ngày":"OK");html+='<a class="'+cls+'" href="'+base+'?xe='+encodeURIComponent(x.ma)+'"><div class="fc">'+esc(x.ma)+'</div><div class="fs">'+st+'</div></a>';});html+='</div>';});
 
 
   html+='<div class="sec-t">KIỂM ĐỊNH PHƯƠNG TIỆN</div>'
@@ -2347,7 +2369,7 @@ function renderDash(){
 
   html+='<div class="sec-t">SỰ CỐ ĐANG MỞ ('+open.length+')</div>';
   if(!open.length)html+='<div class="empty-note">Không có sự cố mở.</div>';
-  open.forEach(o=>{html+='<div class="hist-row'+(o.dead?' neg':'')+'"><div class="top"><span><span class="hist-tag bh">'+(o.dead?'CHẾT MÁY':'MỞ')+'</span><b>'+esc(o.maXe)+'</b> — '+esc(o.moTa)+'</span><b>'+o.age+' ngày</b></div><div class="sub">'+esc(o.ngay)+' · '+esc(o.nguoi)+' · '+esc(o.maBH)+'</div></div>';});
+  open.forEach(o=>{html+='<div class="hist-row'+(o.dead?' neg':'')+'"><div class="top"><span><span class="hist-tag bh">'+(o.dead?'NẰM BÃI':'MỞ')+'</span><b>'+esc(o.maXe)+'</b> — '+esc(o.moTa)+'</span><b>'+o.age+' ngày</b></div><div class="sub">'+esc(o.ngay)+' · '+esc(o.nguoi)+' · '+esc(o.maBH)+'</div></div>';});
 
 
   html+='<div class="sec-t">CHỜ QC ('+pendingQC.length+')</div>';
