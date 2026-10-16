@@ -22,12 +22,13 @@ body{font-family:'Be Vietnam Pro',system-ui,sans-serif;background:var(--paper);c
 header{background:var(--deep);color:var(--white);padding:14px;position:sticky;top:0;z-index:30;box-shadow:0 2px 8px rgba(22,48,43,.3)}
 .hd-inner{max-width:520px;margin:0 auto}
 .hd-title{font-weight:800;font-size:17px;letter-spacing:.2px}
+@media(max-width:600px){.hd-title{padding-right:82px}}
 .hd-sub{font-size:12px;color:#AFC4BC;margin-top:2px}
 .hd-accent{color:var(--safety)}
 .logout-btn{position:absolute;right:14px;top:12px;border:1px solid #527067;background:transparent;color:#D7E4DF;border-radius:8px;padding:5px 9px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer}.logout-btn:hover{border-color:var(--safety);color:var(--safety)}
 .xe-hero{display:flex;align-items:baseline;gap:10px;margin-top:2px}
-.xe-hero .code{font-size:30px;font-weight:800;letter-spacing:1px;color:var(--safety)}
-.xe-hero .loai{font-size:13px;color:#AFC4BC;font-weight:600}
+.xe-hero .code{font-size:clamp(23px,6vw,30px);font-weight:800;letter-spacing:.4px;color:var(--safety);white-space:nowrap;flex-shrink:0}
+.xe-hero .loai{font-size:13px;color:#AFC4BC;font-weight:600;min-width:0;overflow-wrap:anywhere}
 
 
 .tabs{display:flex;flex-wrap:wrap;background:#0D211D;border-radius:10px;padding:3px;margin-top:12px;gap:2px}
@@ -507,6 +508,7 @@ const READ_MODEL_HOTFIX = "2026.08.12-READ-MODEL-FIRST-HF7";
 const LOGIN_STABILITY_HOTFIX = "2026.08.13-LOGIN-STABILITY-HF8";
 const PHUOC_THUAN_HOTFIX = "2026.08.27-PHUOC-THUAN-PT-HF9";
 const PHUOC_THUAN_LIEBHEER_HOTFIX = "2026.08.28-PHUOC-THUAN-LIEBHEER-HF10"; // +4 cẩu LB-PT1..4
+const PT_NEW_TRACTORS_HF14 = "2026.10.16-PT03-PT04-NB11-MAINTENANCE-HF14";
 const STOCK_CORRECTION_HOTFIX = "2026.08.28-STOCK-CORRECTION-HF11";
 const NEW_MATERIAL_PROPOSAL_HOTFIX = "2026.09.09-NEW-MATERIAL-PROPOSAL-HF12";
 const NAM_BAI_LABEL_HOTFIX = "2026.09.21-NAM-BAI-LABEL-HF13";
@@ -1120,6 +1122,7 @@ async function loadData(attempt){
     document.documentElement.dataset.loginStabilityHotfix = LOGIN_STABILITY_HOTFIX;
     document.documentElement.dataset.phuocThuanHotfix = PHUOC_THUAN_HOTFIX;
     document.documentElement.dataset.phuocThuanLiebheerHotfix = PHUOC_THUAN_LIEBHEER_HOTFIX;
+    document.documentElement.dataset.ptNewTractorsHotfix = PT_NEW_TRACTORS_HF14;
     document.documentElement.dataset.stockCorrectionHotfix = STOCK_CORRECTION_HOTFIX;
     document.documentElement.dataset.newMaterialProposalHotfix = NEW_MATERIAL_PROPOSAL_HOTFIX;
     document.documentElement.dataset.namBaiLabelHotfix = NAM_BAI_LABEL_HOTFIX;
@@ -1314,7 +1317,7 @@ function isPhuocThuanLiebheerVehicle(x){
 }
 function isPhuocThuanMobileVehicle(x){
   const ma=String((x&&x.ma)||"").toUpperCase();
-  return ["ĐK-PT1","ĐK-PT2","R-PT1","R-PT2"].includes(ma);
+  return ["ĐK-PT1","ĐK-PT2","ĐK-PT03","ĐK-PT04","R-PT1","R-PT2"].includes(ma);
 }
 function isPhuocThuanVehicle(x){ return isPhuocThuanMobileVehicle(x)||isPhuocThuanLiebheerVehicle(x); }
 function vehicleDashboardGroupPT_(x){
