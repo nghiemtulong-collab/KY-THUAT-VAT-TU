@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Kỹ thuật vật tư — ICD Phúc Long — NẰM BÃI HF13</title>
+<title>Kỹ thuật vật tư — ICD Phúc Long — MOOC HF15</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -220,6 +220,20 @@ body.adjusting .fbox.slipbox .fbox-head{background:var(--danger)}
 .checklist-mini{border:1px solid var(--line);border-radius:10px;background:var(--white);padding:9px;text-align:center}.checklist-mini b{display:block;font-size:20px;color:var(--deep-2)}.checklist-mini span{font-size:10px;font-weight:800;color:var(--muted)}
 .checklist-mini.bad{border-color:var(--danger);background:#FDF3F2}.checklist-mini.bad b{color:var(--danger)}
 .checklist-mini.warn{border-color:var(--safety);background:#FFF7EB}.checklist-mini.warn b{color:var(--safety-dark)}
+/* HF15 — riêng đầu kéo, gồm NB và ĐK-PT. Giữ touch targets đủ rộng trên điện thoại. */
+.mooc-box{border:1.5px solid #91B4A7;background:#F5FAF7;border-radius:11px;padding:11px}
+.mooc-head{color:var(--deep-2);font-weight:800;font-size:14px;margin-bottom:8px}
+.mooc-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-bottom:12px}
+.mooc-options button{border:1.5px solid var(--line);background:var(--white);border-radius:9px;min-height:52px;padding:8px 4px;font-family:inherit;font-size:11.5px;font-weight:800;line-height:1.25;cursor:pointer;white-space:normal;color:var(--deep-2)}
+.mooc-options button.on{border-color:var(--deep-2);background:#DFEFE8}
+.mooc-options button[data-mooc="ABNORMAL"].on{border-color:var(--danger);background:#FDE8E6;color:var(--danger)}
+.mooc-options button[data-mooc="NOT_ATTACHED"].on{border-color:#A26E18;background:#FFF0CF;color:#845400}
+.mooc-box label{font-size:12.5px;font-weight:700;display:block;margin-bottom:5px}
+.mooc-box textarea{width:100%;min-height:80px;resize:vertical;font:inherit;font-size:14px;padding:10px 11px;border:1.5px solid var(--line);border-radius:9px;background:var(--white)}
+.mooc-box textarea:focus{outline:none;border-color:var(--safety)}
+.mooc-hint{font-size:11.5px;color:var(--muted);margin-top:5px}
+.mooc-audit{font-size:12px;color:var(--deep-2);margin-top:5px;overflow-wrap:anywhere}
+@media(max-width:350px){.mooc-options{grid-template-columns:repeat(2,minmax(0,1fr))}.mooc-options button:last-child{grid-column:1/-1}}
 .shift-filter{display:flex;gap:6px;margin:7px 0}.shift-filter button{flex:1;border:1.5px solid var(--line);border-radius:9px;background:var(--white);padding:8px;font-family:inherit;font-size:12px;font-weight:800;color:var(--muted)}.shift-filter button.on{background:var(--deep-2);color:var(--white);border-color:var(--deep-2)}
 
 
@@ -509,6 +523,7 @@ const LOGIN_STABILITY_HOTFIX = "2026.08.13-LOGIN-STABILITY-HF8";
 const PHUOC_THUAN_HOTFIX = "2026.08.27-PHUOC-THUAN-PT-HF9";
 const PHUOC_THUAN_LIEBHEER_HOTFIX = "2026.08.28-PHUOC-THUAN-LIEBHEER-HF10"; // +4 cẩu LB-PT1..4
 const PT_NEW_TRACTORS_HF14 = "2026.10.16-PT03-PT04-NB11-MAINTENANCE-HF14";
+const MOOC_CHECKLIST_HF15 = "2026.10.26-TRACTOR-MOOC-CHECKLIST-HF15";
 const STOCK_CORRECTION_HOTFIX = "2026.08.28-STOCK-CORRECTION-HF11";
 const NEW_MATERIAL_PROPOSAL_HOTFIX = "2026.09.09-NEW-MATERIAL-PROPOSAL-HF12";
 const NAM_BAI_LABEL_HOTFIX = "2026.09.21-NAM-BAI-LABEL-HF13";
@@ -929,8 +944,9 @@ function showNextDashLiveAlert(){
     vibration=[100,70,100];
   }else if(type==="CHECKLIST_DAU_CA"){
     box.classList.add("checklist");
-    title="⚠️ CHECKLIST KHÔNG ĐẠT — "+(event.maXe||"");
-    msg=((event.failedItems||[]).join(", ")||"Có hạng mục không đạt")+(event.ghiChu?" · "+event.ghiChu:"");
+    const moocAbnormal=event.moocStatus==="ABNORMAL";
+    title=(moocAbnormal?"⚠️ MOOC BẤT THƯỜNG — ":"⚠️ CHECKLIST KHÔNG ĐẠT — ")+(event.maXe||"");
+    msg=((event.failedItems||[]).join(", ")||"Có hạng mục không đạt")+(event.moocNote?" · Mooc: "+event.moocNote:"")+(event.ghiChu?" · "+event.ghiChu:"");
     meta=[event.shift?shiftLabel(event.shift):"",event.nguoi?"Người kiểm tra: "+event.nguoi:"",event.txnId||"",event.ts||""];
     duration=12000;
     vibration=[220,100,220];
@@ -1123,6 +1139,7 @@ async function loadData(attempt){
     document.documentElement.dataset.phuocThuanHotfix = PHUOC_THUAN_HOTFIX;
     document.documentElement.dataset.phuocThuanLiebheerHotfix = PHUOC_THUAN_LIEBHEER_HOTFIX;
     document.documentElement.dataset.ptNewTractorsHotfix = PT_NEW_TRACTORS_HF14;
+    document.documentElement.dataset.moocChecklistHotfix = String(j.moocChecklistHotfix||"");
     document.documentElement.dataset.stockCorrectionHotfix = STOCK_CORRECTION_HOTFIX;
     document.documentElement.dataset.newMaterialProposalHotfix = NEW_MATERIAL_PROPOSAL_HOTFIX;
     document.documentElement.dataset.namBaiLabelHotfix = NAM_BAI_LABEL_HOTFIX;
@@ -1323,6 +1340,18 @@ function isPhuocThuanVehicle(x){ return isPhuocThuanMobileVehicle(x)||isPhuocThu
 function vehicleDashboardGroupPT_(x){
   return isPhuocThuanVehicle(x)?"CẢNG PHƯỚC THUẬN":String((x&&x.loai)||"");
 }
+function isTractorVehicle(x){
+  if(!x)return false;
+  const t=stripAccent(String(x.loai||"").replace(/\s+/g," ").trim());
+  return /(^|\s)dau keo(\s|$)/.test(t);
+}
+function moocStatusLabelHF15_(status){
+  return {NORMAL:"Bình thường",ABNORMAL:"Bất thường",NOT_ATTACHED:"Không gắn Mooc",NOT_RECORDED:"Chưa ghi nhận"}[String(status||"")]||"Chưa ghi nhận";
+}
+function moocHistoryTextHF15_(r){
+  if(!r||!r.moocStatus)return "";
+  return "Mooc: "+moocStatusLabelHF15_(r.moocStatus)+(r.moocNote?" — "+r.moocNote:"");
+}
 function checklistGroupForVehicle(x){
   if(!x)return "";
   if(isPhuocThuanLiebheerVehicle(x))return "LIEBHEER";
@@ -1491,7 +1520,7 @@ function renderHoSo(){
 
 
   const clHist=(d.history.CHECKLIST||[]).filter(r=>r.maXe===XE).slice(0,6);
-  if(clHist.length){html+='<div class="sec-t">CHECKLIST ĐẦU CA GẦN NHẤT</div>'+clHist.map(r=>'<div class="hist-row'+(r.result==="KHONG_DAT"?' neg':'')+'"><div class="top"><span><span class="hist-tag '+(r.result==="KHONG_DAT"?'bh':'sc')+'">'+(r.result==="KHONG_DAT"?'KHÔNG ĐẠT':'ĐẠT')+'</span>'+esc(shiftLabel(r.shift))+'</span><b>'+esc(r.ngay)+'</b></div><div class="sub">'+esc(r.nguoi)+(r.failedLabels&&r.failedLabels.length?' · '+esc(r.failedLabels.join(', ')):'')+(r.note?' · '+esc(r.note):'')+'</div></div>').join('');}
+  if(clHist.length){html+='<div class="sec-t">CHECKLIST ĐẦU CA GẦN NHẤT</div>'+clHist.map(r=>'<div class="hist-row'+(r.result==="KHONG_DAT"?' neg':'')+'"><div class="top"><span><span class="hist-tag '+(r.result==="KHONG_DAT"?'bh':'sc')+'">'+(r.result==="KHONG_DAT"?'KHÔNG ĐẠT':'ĐẠT')+'</span>'+esc(shiftLabel(r.shift))+'</span><b>'+esc(r.ngay)+'</b></div><div class="sub">'+esc(r.nguoi)+(r.failedLabels&&r.failedLabels.length?' · '+esc(r.failedLabels.join(', ')):'')+(r.note?' · '+esc(r.note):'')+(r.moocStatus?' · '+esc(moocHistoryTextHF15_(r)):'')+'</div></div>').join('');}
   const vvHist=(d.history.VA_VO||[]).filter(r=>r.maXe===XE).slice(0,6);
   if(vvHist.length){html+='<div class="sec-t">LỊCH SỬ VÁ VỎ GẦN NHẤT</div>'+vvHist.map(r=>'<div class="hist-row"><div class="top"><span><span class="hist-tag d">VÁ VỎ</span>'+esc(r.noiDung)+'</span><b>'+esc(r.ngay)+'</b></div><div class="sub">Tài xế '+esc(r.taiXe)+(r.ghiChu?' · '+esc(r.ghiChu):'')+' · '+esc(r.txnId||'')+'</div></div>').join('');}
 
@@ -1942,29 +1971,60 @@ function renderQC(){
 
 /* ==================== CHECKLIST ĐẦU CA ==================== */
 function renderChecklist(){
-  const xe=state.data.xe.find(x=>x.ma===XE),group=checklistGroupForVehicle(xe);
+  const xe=state.data.xe.find(x=>x.ma===XE),group=checklistGroupForVehicle(xe),tractor=isTractorVehicle(xe);
   if(!group){$("main").innerHTML='<div class="empty-note">Phương tiện này không áp dụng checklist đầu ca.</div>';return;}
+  // Frontend không cho ghi Mooc vào backend cũ vì backend đó sẽ bỏ qua field, gây thiếu audit.
+  if(tractor && (!state.data||state.data.moocChecklistHotfix!==MOOC_CHECKLIST_HF15)){
+    $("main").innerHTML='<div class="warn-note"><b>Chưa đồng bộ HF15.</b> Backend hiện tại chưa xác nhận hỗ trợ checklist Mooc. Không được ghi checklist xe đầu kéo đến khi backend và frontend cùng phiên bản HF15.</div>';
+    $("bar").classList.remove("show");return;
+  }
   const mobile=[['nuocMay','Nước máy','Đạt','Không đạt'],['nhotHopSo','Nhớt hộp số','Đạt','Không đạt'],['nhotThuyLuc','Nhớt thủy lực','Đạt','Không đạt'],['nhotMay','Nhớt máy','Đạt','Không đạt'],['boE','Bô e','Đã vệ sinh','Chưa vệ sinh'],['binhChuaChay','Bình chữa cháy','Đạt','Không đạt']];
   const gantry=[['nhaToi','Nhà tời','Đạt','Không đạt'],['heThongChanChay','Hệ thống chân chạy','Đạt','Không đạt'],['binhChuaChay','Bình chữa cháy','Đạt','Không đạt'],['heThongMang','Hệ thống máng','Đạt','Không đạt']];
   const liebheer=[['ngangChupCapTreo','Kiểm tra hệ thống ngáng chụp và cáp treo','Đạt','Không đạt'],['denNguon3Pha','Kiểm tra đèn báo nguồn 3 pha trong tủ điện chính','Đạt','Không đạt'],['binhCC','Kiểm tra bình CC','Đạt','Không đạt'],['levelNhotThuyLuc','Kiểm tra level nhớt thủy lực','Đạt','Không đạt'],['roRiThuyLuc','Kiểm tra rò rỉ hệ thống thủy lực','Đạt','Không đạt'],['ngoaiQuang','Kiểm tra tổng thể ngoại quang (tủ điện, các thiết bị trong cabin, gạt mưa, ...)','Đạt','Không đạt'],['vanHanhKhongTai','Vận hành thử các chức năng không tải (lên xuống cần, lên xuống cáp, quay máng qua lại)','Đạt','Không đạt']];
   const fields=group==='GANTRY'?gantry:(group==='LIEBHEER'?liebheer:mobile),results={};
   const people=(state.data.taixe||[]).map(t=>'<option value="'+esc(t)+'">').join('');
+  const moocHTML=tractor?'<div class="frow"><div class="mooc-box"><div class="mooc-head">Tình trạng Mooc *</div>'
+      +'<div class="mooc-options" id="clMoocOptions" role="group" aria-label="Tình trạng Mooc">'
+      +'<button type="button" data-mooc="NORMAL" aria-pressed="false">Bình thường</button>'
+      +'<button type="button" data-mooc="ABNORMAL" aria-pressed="false">Bất thường</button>'
+      +'<button type="button" data-mooc="NOT_ATTACHED" aria-pressed="false">Không gắn Mooc</button></div>'
+      +'<label for="clMoocNote" id="clMoocNoteLabel">Ghi chú chi tiết tình trạng Mooc (không bắt buộc)</label>'
+      +'<textarea id="clMoocNote" maxlength="500" placeholder="Mã/biển số Mooc, vị trí, hiện tượng bất thường hoặc thông tin bổ sung..."></textarea>'
+      +'<div class="mooc-hint" id="clMoocHint">Bất thường: bắt buộc ghi rõ chi tiết. Không gắn Mooc: không tính là bất thường.</div></div></div>':'';
   $("main").innerHTML='<div class="warn-note">Checklist theo <b>Ngày + Ca + Mã xe</b>. Gửi lại cùng ngày/ca sẽ tạo bản ghi mới thay thế, lịch sử cũ vẫn giữ trong Google Sheet.</div>'
     +'<div class="fbox"><div class="fbox-head"><span>CHECKLIST ĐẦU CA — '+esc(XE)+'</span></div>'
     +'<div class="frow"><label>Ngày</label><input type="date" id="clNgay" value="'+todayISO()+'"></div>'
     +'<div class="frow"><label>Ca</label><select id="clShift"><option value="CA_1">Ca 1</option><option value="CA_2">Ca 2</option><option value="CA_3">Ca 3</option></select></div>'
     +'<div class="frow"><label>Người kiểm tra</label><input type="text" id="clNguoi" list="clPeople" placeholder="Gõ tên"><datalist id="clPeople">'+people+'</datalist></div>'
     +'<div class="frow"><div class="check-grid" id="clItems">'+fields.map(a=>'<div class="check-item" data-cl-key="'+a[0]+'"><div class="check-name">'+a[1]+'</div><div class="check-seg"><button type="button" class="good" data-v="'+(a[0]==='boE'?'DA_VE_SINH':'DAT')+'">'+a[2]+'</button><button type="button" class="bad" data-v="'+(a[0]==='boE'?'CHUA_VE_SINH':'KHONG_DAT')+'">'+a[3]+'</button></div></div>').join('')+'</div></div>'
-    +'<div class="frow"><label>Ghi chú <span style="font-weight:400;color:var(--muted)">(bắt buộc khi có mục không đạt/chưa vệ sinh)</span></label><textarea id="clNote" placeholder="Ghi rõ vị trí, hiện tượng và xử lý tạm thời nếu có"></textarea></div></div>';
+    +moocHTML
+    +'<div class="frow"><label>Ghi chú chung <span style="font-weight:400;color:var(--muted)">(bắt buộc khi các mục kiểm tra khác không đạt/chưa vệ sinh)</span></label><textarea id="clNote" placeholder="Ghi rõ vị trí, hiện tượng và xử lý tạm thời nếu có"></textarea></div></div>';
   document.querySelectorAll('[data-cl-key]').forEach(card=>card.querySelectorAll('button').forEach(btn=>btn.onclick=()=>{results[card.dataset.clKey]=btn.dataset.v;card.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===btn));}));
-  $("bar").classList.add("show");$("barSum").innerHTML='<b>'+fields.length+' hạng mục kiểm tra</b>';const btn=$("btnSend");btn.textContent='Gửi checklist';btn.disabled=false;
+  let moocStatus="";
+  if(tractor){
+    document.querySelectorAll('[data-mooc]').forEach(b=>b.onclick=()=>{
+      moocStatus=b.dataset.mooc;
+      document.querySelectorAll('[data-mooc]').forEach(x=>{const on=x===b;x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on));});
+      const abnormal=moocStatus==='ABNORMAL';
+      $('clMoocNoteLabel').textContent='Ghi chú chi tiết tình trạng Mooc '+(abnormal?'*':'(không bắt buộc)');
+      $('clMoocHint').textContent=abnormal?'Mooc bất thường: bắt buộc ghi chú chi tiết trước khi gửi.':'Không gắn Mooc không tự tính là checklist không đạt.';
+    });
+  }
+  $("bar").classList.add("show");$("barSum").innerHTML='<b>'+(fields.length+(tractor?1:0))+' hạng mục kiểm tra</b>';const btn=$("btnSend");btn.textContent='Gửi checklist';btn.disabled=false;
   btn.onclick=()=>{
     for(const a of fields){if(!results[a[0]]){alert('Chưa chọn kết quả: '+a[1]);return;}}
-    const bad=Object.values(results).some(v=>v==='KHONG_DAT'||v==='CHUA_VE_SINH'),nguoi=$("clNguoi").value.trim(),note=$("clNote").value.trim();
-    if(!nguoi){alert('Ghi người kiểm tra.');return;}if(bad&&!note){alert('Có mục không đạt/chưa vệ sinh; bắt buộc ghi chú.');return;}
+    if(tractor&&!moocStatus){alert('Chọn tình trạng Mooc: Bình thường / Bất thường / Không gắn Mooc.');return;}
+    const badBase=Object.values(results).some(v=>v==='KHONG_DAT'||v==='CHUA_VE_SINH');
+    const moocNote=tractor?$('clMoocNote').value.trim():'';
+    if(tractor&&moocStatus==='ABNORMAL'&&!moocNote){alert('Mooc bất thường: bắt buộc ghi chú chi tiết.');$('clMoocNote').focus();return;}
+    const bad=badBase||(tractor&&moocStatus==='ABNORMAL'),nguoi=$("clNguoi").value.trim(),note=$("clNote").value.trim();
+    if(!nguoi){alert('Ghi người kiểm tra.');return;}if(badBase&&!note){alert('Có mục khác không đạt/chưa vệ sinh; bắt buộc ghi chú chung.');return;}
     const ngay=requireDateVN('clNgay');if(!ngay)return;
     const badLabels=fields.filter(a=>results[a[0]]==='KHONG_DAT'||results[a[0]]==='CHUA_VE_SINH').map(a=>a[1]);
-    openConfirm({title:'Xác nhận CHECKLIST — '+XE,summary:'Ca: <b>'+esc(shiftLabel($("clShift").value))+'</b><br>Kết quả: <b>'+(bad?'KHÔNG ĐẠT':'ĐẠT')+'</b>'+(badLabels.length?'<br>Không đạt: '+esc(badLabels.join(', ')):'')+(note?'<br>Ghi chú: '+esc(note):''),needPin:null,payload:{type:'CHECKLIST_DAU_CA',maXe:XE,shift:$("clShift").value,nguoi:nguoi,note:note,results:results,date:ngay,isAdjustment:false},doneMsg:j=>j.message||'Đã ghi checklist.',after:()=>loadData()});
+    if(tractor&&moocStatus==='ABNORMAL')badLabels.push('Mooc bất thường');
+    const payload={type:'CHECKLIST_DAU_CA',maXe:XE,shift:$("clShift").value,nguoi:nguoi,note:note,results:results,date:ngay,isAdjustment:false};
+    if(tractor){payload.moocStatus=moocStatus;payload.moocNote=moocNote;}
+    openConfirm({title:'Xác nhận CHECKLIST — '+XE,summary:'Ca: <b>'+esc(shiftLabel($("clShift").value))+'</b><br>Kết quả: <b>'+(bad?'KHÔNG ĐẠT':'ĐẠT')+'</b>'+(tractor?'<br>Mooc: <b>'+esc(moocStatusLabelHF15_(moocStatus))+'</b>':'')+(moocNote?'<br>Chi tiết Mooc: '+esc(moocNote):'')+(badLabels.length?'<br>Không đạt: '+esc(badLabels.join(', ')):'')+(note?'<br>Ghi chú chung: '+esc(note):''),needPin:null,payload:payload,doneMsg:j=>j.message||'Đã ghi checklist.',after:()=>loadData()});
   };
 }
 
@@ -2314,7 +2374,7 @@ function renderDash(){
   (hist.QC||[]).forEach(r=>acts.push({t:"qc",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag sc">QC</span>',top:esc(r.maXe)+" · "+(r.ketQua==="APPROVE"?"ĐẠT":"KHÔNG ĐẠT"),sub:esc(r.nguoiQC)+" · "+esc(r.ghiChu)+" · "+esc(r.qcId||""),neg:r.ketQua!=="APPROVE"}));
   (hist.BAO_DUONG||[]).forEach(r=>acts.push({t:"bd",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag bd">BẢO DƯỠNG</span>',top:esc(r.maXe)+" · "+esc(r.hangMuc),sub:(r.soGio!=null?r.soGio+"h · ":"")+esc(r.nguoi)+" · "+esc(r.txnId||"")}));
   (hist.KIEM_DINH||[]).forEach(r=>acts.push({t:"kd",ts:r.ts,ngay:r.inspectionDate,tag:'<span class="hist-tag d">KIỂM ĐỊNH</span>',top:esc(r.maXe)+" · hạn "+esc(r.nextInspectionDate||""),sub:esc(r.updatedBy||"")+" · "+esc(r.inspectionOrg||"")+" · "+esc(r.txnId||"")}));
-  (hist.CHECKLIST||[]).forEach(r=>acts.push({t:"cl",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag '+(r.result==="KHONG_DAT"?'bh':'sc')+'">CHECKLIST</span>',top:esc(r.maXe)+" · "+esc(shiftLabel(r.shift))+" · "+(r.result==="KHONG_DAT"?"KHÔNG ĐẠT":"ĐẠT"),sub:esc(r.nguoi)+(r.failedLabels&&r.failedLabels.length?' · '+esc(r.failedLabels.join(', ')):'')+' · '+esc(r.txnId||''),neg:r.result==="KHONG_DAT"}));
+  (hist.CHECKLIST||[]).forEach(r=>acts.push({t:"cl",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag '+(r.result==="KHONG_DAT"?'bh':'sc')+'">CHECKLIST</span>',top:esc(r.maXe)+" · "+esc(shiftLabel(r.shift))+" · "+(r.result==="KHONG_DAT"?"KHÔNG ĐẠT":"ĐẠT"),sub:esc(r.nguoi)+(r.failedLabels&&r.failedLabels.length?' · '+esc(r.failedLabels.join(', ')):'')+(r.moocStatus?' · '+esc(moocHistoryTextHF15_(r)):'')+' · '+esc(r.txnId||''),neg:r.result==="KHONG_DAT"}));
   (hist.VA_VO||[]).forEach(r=>acts.push({t:"vv",ts:r.ts,ngay:r.ngay,tag:'<span class="hist-tag d">VÁ VỎ</span>',top:esc(r.maXe)+" · "+esc(r.noiDung),sub:esc(r.taiXe)+(r.ghiChu?' · '+esc(r.ghiChu):'')+' · '+esc(r.txnId||'')}));
   acts.sort((a,b)=>sortKey(b)>sortKey(a)?1:-1);state.dashActs=acts;const todayCount=acts.filter(a=>a.ngay===todayVN).length;
 
@@ -2360,7 +2420,9 @@ function renderDash(){
   const clShiftRows=checklistRows.filter(r=>r.shift===dashShift),clMap=Object.fromEntries(clShiftRows.map(r=>[r.maXe,r])),clBad=clShiftRows.filter(r=>r.result==='KHONG_DAT'),clMissing=checklistVehicles.filter(x=>!clMap[x.ma]);
   html+='<div class="sec-t">CHECKLIST ĐẦU CA — HÔM NAY</div><div class="shift-filter"><button data-dshift="CA_1" class="'+(dashShift==='CA_1'?'on':'')+'">Ca 1</button><button data-dshift="CA_2" class="'+(dashShift==='CA_2'?'on':'')+'">Ca 2</button><button data-dshift="CA_3" class="'+(dashShift==='CA_3'?'on':'')+'">Ca 3</button></div>'
     +'<div class="checklist-summary"><div class="checklist-mini"><b>'+clShiftRows.length+'/'+checklistVehicles.length+'</b><span>ĐÃ KIỂM</span></div><div class="checklist-mini warn"><b>'+clMissing.length+'</b><span>CHƯA KIỂM</span></div><div class="checklist-mini bad"><b>'+clBad.length+'</b><span>KHÔNG ĐẠT</span></div></div>';
-  clBad.forEach(r=>{html+='<div class="hist-row neg"><div class="top"><span><span class="hist-tag bh">KHÔNG ĐẠT</span><b>'+esc(r.maXe)+'</b> — '+esc(shiftLabel(r.shift))+'</span><b>'+esc(r.ngay)+'</b></div><div class="sub">'+esc((r.failedLabels||[]).join(', '))+(r.note?' · '+esc(r.note):'')+' · '+esc(r.nguoi)+'</div><div class="notif-actions"><a href="'+base+'?xe='+encodeURIComponent(r.maXe)+'&tab=baohong">Tạo báo hỏng</a></div></div>';});
+  const moocRecorded=clShiftRows.filter(r=>r.moocStatus&&r.moocStatus!=="NOT_RECORDED");
+  if(moocRecorded.length)html+='<div class="mooc-audit"><b>MOOC ĐẦU KÉO:</b> '+moocRecorded.map(r=>esc(r.maXe)+' — '+esc(moocStatusLabelHF15_(r.moocStatus))+(r.moocNote?' ('+esc(r.moocNote)+')':'')).join(' · ')+'</div>';
+  clBad.forEach(r=>{html+='<div class="hist-row neg"><div class="top"><span><span class="hist-tag bh">KHÔNG ĐẠT</span><b>'+esc(r.maXe)+'</b> — '+esc(shiftLabel(r.shift))+'</span><b>'+esc(r.ngay)+'</b></div><div class="sub">'+esc((r.failedLabels||[]).join(', '))+(r.note?' · '+esc(r.note):'')+(r.moocStatus?' · '+esc(moocHistoryTextHF15_(r)):'')+' · '+esc(r.nguoi)+'</div><div class="notif-actions"><a href="'+base+'?xe='+encodeURIComponent(r.maXe)+'&tab=baohong">Tạo báo hỏng</a></div></div>';});
   if(clMissing.length)html+='<div class="hist-row"><div class="top"><span><span class="hist-tag d">CHƯA KIỂM</span>'+clMissing.map(x=>'<a href="'+base+'?xe='+encodeURIComponent(x.ma)+'" style="color:var(--deep-2);margin-right:8px">'+esc(x.ma)+'</a>').join('')+'</span></div><div class="sub">Chưa có checklist '+esc(shiftLabel(dashShift))+' hôm nay.</div></div>';
 
 
